@@ -1,224 +1,155 @@
 import streamlit as st
 import yfinance as yf
-import numpy as np
-import matplotlib.pyplot as plt
 import pandas as pd
-import tensorflow as tf
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import LSTM, GRU, Dense, Dropout
-from tensorflow.keras.optimizers import Adamax
-from sklearn.metrics import mean_squared_error
-import math
-from hyperopt import fmin, tpe, hp, space_eval, Trials
-from tensorflow.keras.callbacks import EarlyStopping
-from pyngrok import ngrok
+import numpy as np
 import plotly.graph_objects as go
-import time
-from warnings import simplefilter
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.arima.model import ARIMA
+from sklearn.metrics import mean_absolute_error, mean_squared_error
+import math
 
-simplefilter(action='ignore', category=FutureWarning)
-simplefilter(action='ignore', category=DeprecationWarning)
+# List of cryptocurrencies
+cryptos = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD"]
+
+# Function to download the data
+def download_data(crypto, start_date, end_date):
+    data = yf.download(crypto, start=start_date, end=end_date)
+    return data
+
+# Calculate evaluation metrics
+def calculate_metrics(actual, forecast):
+    mae = mean_absolute_error(actual, forecast)
+    rmse = math.sqrt(mean_squared_error(actual, forecast))
+    mape = np.mean(np.abs((actual - forecast) / actual)) * 100
+    return mae, rmse, mape
 
 # Streamlit app
 def main():
-    st.title("Cryptocurrency Price Prediction App")
-    st.write("Sistem prediksi menggunakan algoritma LSTM dan GRU dengan memasukkan paramaeter. Hiperparameter adalah variabel yang secara signifikan mempengaruhi proses pelatihan model. Hyperparameter merupakan parameter yang tidak dapat diperoleh secara langsung dari data dan perlu diinisialisasi sebelum proses pelatihan dimulai. Pada penelitian ini, inisialisasi hyperparameter meliputi pemilihan optimizer dan learning rate, penentuan batch size, jumlah epoch, serta struktur jaringan syaraf seperti jumlah hidden layer dan neuron pada setiap lapisan. Keputusan yang bijaksana dalam menentukan nilai-nilai ini dapat sangat mempengaruhi kinerja dan kemampuan generalisasi model, yang bertujuan untuk mencapai kinerja yang optimal dalam memprediksi harga mata uang kripto")
-    st.write("Silahkan masukkan parameter")
+    st.title("Manual Cryptocurrency Price Prediction")
+    st.write("This app allows manual parameter tuning for Triple Exponential Smoothing and ARIMA models.")
 
-    st.header("Data Download")
-    stock_symbol = st.selectbox("Masukkan Nama Coin:", ["STX4847-USD", "ICP-USD", "RNDR-USD", "AXS-USD", "WEMIX-USD", "SAND-USD", "THETA-USD", "MANA-USD", "APE-USD", "ENJ-USD", "ZIL-USD", "ILV-USD", "EGLD-USD", "MASK8536-USD", "SUSHI-USD", "MIC27033-USD"])
-    start_date = st.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.date_input("End Date", pd.to_datetime("2023-01-01"))
-    price_type = st.selectbox("Select Price Type:", ["Close", "Open", "High", "Low"])
+    # Sidebar Input Data
+    st.sidebar.header("Data Download")
+    stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
+    start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2021-01-01"))
+    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2023-12-31"))
+    model_choice = st.sidebar.radio("Select Model:", ["Triple Exponential Smoothing (TES)", "ARIMA"])
 
-    data = yf.download(stock_symbol, start=start_date, end=end_date)
+    # Update title based on selections
+    st.title(f"{model_choice} Prediction for {stock_symbol}")
 
-    close_prices = data[price_type].values.reshape(-1, 1)
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    scaled_data = scaler.fit_transform(close_prices)
+    # Download stock price data
+    data = download_data(stock_symbol, start_date, end_date)
 
-    n_steps = st.slider("Select Number of Time Steps:", min_value=10, max_value=100, value=60, step=10)
-    X, y = prepare_data(scaled_data, n_steps)
+    # Process Prices
+    close_prices = data['Close']
+    open_prices = data['Open']
+    high_prices = data['High']
+    low_prices = data['Low']
 
-    train_size = int(len(X) * 0.8)
-    X_train, X_test = X[:train_size], X[train_size:]
-    y_train, y_test = y[:train_size], y[train_size:]
+    # Split data
+    train_size = int(len(close_prices) * 0.8)
+    train_close = close_prices[:train_size]
+    test_close = close_prices[train_size:]
+    train_open = open_prices[:train_size]
+    test_open = open_prices[train_size:]
+    train_high = high_prices[:train_size]
+    test_high = high_prices[train_size:]
+    train_low = low_prices[:train_size]
+    test_low = low_prices[train_size:]
 
-    X_train_lstm = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_test_lstm = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-    X_train_gru = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_test_gru = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
+    # Parameter selection
+    st.header("Manual Parameter Selection")
+    feature_choice = st.selectbox("Select Feature to Forecast:", ["Close", "Open", "High", "Low"])
 
-    st.header("Hyperparameter Tuning")
-    units = st.selectbox("Select Number of Units:", [50, 100, 150], index=0)
-    dropout_rate = st.slider("Select Dropout Rate:", min_value=0.2, max_value=0.5, value=0.3, step=0.05)
-    learning_rate = st.slider("Select Learning Rate:", np.log(0.001), np.log(0.01), value=np.log(0.005), step=0.001)
-    epochs = st.selectbox("Select Number of Epochs:", [50, 100, 150], index=0)
-    batch_size = st.selectbox("Select Batch Size:", [32, 64], index=0)
+    if model_choice == "Triple Exponential Smoothing (TES)":
+        alpha = st.slider("Alpha (smoothing level)", 0.01, 1.0, 0.5, 0.01)
+        beta = st.slider("Beta (smoothing slope)", 0.01, 1.0, 0.5, 0.01)
+        gamma = st.slider("Gamma (smoothing seasonal)", 0.01, 1.0, 0.5, 0.01)
+        seasonal_periods = st.slider("Seasonal Periods", 1, 365, 12)
+    else:
+        p = st.slider("p (AR order)", 0, 5, 1)
+        d = st.slider("d (Difference order)", 0, 2, 1)
+        q = st.slider("q (MA order)", 0, 5, 1)
+        order = (p, d, q)
 
-    if st.button("Apply Hyperparameters", key='apply_button'):
-        st.sidebar.text("Applying hyperparameters...")
-        space = {
-            'units': units,
-            'dropout_rate': dropout_rate,
-            'learning_rate': np.exp(learning_rate),
-            'epochs': epochs,
-            'batch_size': batch_size
-        }
+    if st.button("Apply Manual Parameters"):
+        if model_choice == "Triple Exponential Smoothing (TES)":
+            if feature_choice == "Close":
+                model_tes = ExponentialSmoothing(train_close, trend="add", seasonal="add", seasonal_periods=seasonal_periods).fit(
+                    smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma)
+                forecast = model_tes.forecast(steps=len(test_close))
+                actual = test_close
+            elif feature_choice == "Open":
+                model_tes = ExponentialSmoothing(train_open, trend="add", seasonal="add", seasonal_periods=seasonal_periods).fit(
+                    smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma)
+                forecast = model_tes.forecast(steps=len(test_open))
+                actual = test_open
+            elif feature_choice == "High":
+                model_tes = ExponentialSmoothing(train_high, trend="add", seasonal="add", seasonal_periods=seasonal_periods).fit(
+                    smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma)
+                forecast = model_tes.forecast(steps=len(test_high))
+                actual = test_high
+            elif feature_choice == "Low":
+                model_tes = ExponentialSmoothing(train_low, trend="add", seasonal="add", seasonal_periods=seasonal_periods).fit(
+                    smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma)
+                forecast = model_tes.forecast(steps=len(test_low))
+                actual = test_low
+        else:
+            if feature_choice == "Close":
+                model_arima = ARIMA(train_close, order=order).fit()
+                forecast = model_arima.forecast(steps=len(test_close))
+                actual = test_close
+            elif feature_choice == "Open":
+                model_arima = ARIMA(train_open, order=order).fit()
+                forecast = model_arima.forecast(steps=len(test_open))
+                actual = test_open
+            elif feature_choice == "High":
+                model_arima = ARIMA(train_high, order=order).fit()
+                forecast = model_arima.forecast(steps=len(test_high))
+                actual = test_high
+            elif feature_choice == "Low":
+                model_arima = ARIMA(train_low, order=order).fit()
+                forecast = model_arima.forecast(steps=len(test_low))
+                actual = test_low
 
-        early_stopping = EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True)
+        # Calculate metrics
+        mae, rmse, mape = calculate_metrics(actual, forecast)
+
+        # Display metrics
+        st.subheader("Metrics")
+        st.write(f"MAE: {mae:.4f}")
+        st.write(f"RMSE: {rmse:.4f}")
+        st.write(f"MAPE: {mape:.2f}%")
+
+        # Plotting the results
+        st.subheader(f"{feature_choice} Prices")
+        fig = go.Figure()
+        if feature_choice == "Close":
+            fig.add_trace(go.Scatter(x=close_prices.index, y=close_prices, mode='lines', name='Actual (Train)', line=dict(color='gray')))
+            fig.add_trace(go.Scatter(x=test_close.index, y=test_close, mode='lines', name='Actual (Test)', line=dict(color='blue')))
+            fig.add_trace(go.Scatter(x=test_close.index, y=forecast, mode='lines', name='Forecast', line=dict(color='red')))
+        elif feature_choice == "Open":
+            fig.add_trace(go.Scatter(x=open_prices.index, y=open_prices, mode='lines', name='Actual (Train)', line=dict(color='gray')))
+            fig.add_trace(go.Scatter(x=test_open.index, y=test_open, mode='lines', name='Actual (Test)', line=dict(color='blue')))
+            fig.add_trace(go.Scatter(x=test_open.index, y=forecast, mode='lines', name='Forecast', line=dict(color='red')))
+        elif feature_choice == "High":
+            fig.add_trace(go.Scatter(x=high_prices.index, y=high_prices, mode='lines', name='Actual (Train)', line=dict(color='gray')))
+            fig.add_trace(go.Scatter(x=test_high.index, y=test_high, mode='lines', name='Actual (Test)', line=dict(color='blue')))
+            fig.add_trace(go.Scatter(x=test_high.index, y=forecast, mode='lines', name='Forecast', line=dict(color='red')))
+        elif feature_choice == "Low":
+            fig.add_trace(go.Scatter(x=low_prices.index, y=low_prices, mode='lines', name='Actual (Train)', line=dict(color='gray')))
+            fig.add_trace(go.Scatter(x=test_low.index, y=test_low, mode='lines', name='Actual (Test)', line=dict(color='blue')))
+            fig.add_trace(go.Scatter(x=test_low.index, y=forecast, mode='lines', name='Forecast', line=dict(color='red')))
         
-        start_time = time.time()
-    
-        best_params_lstm, history_lstm, y_pred_lstm, y_test_orig_lstm = run_optimization(space, 'lstm', X_train_lstm, y_train, X_test_lstm, y_test, scaler, early_stopping)
-        best_params_gru, history_gru, y_pred_gru, y_test_orig_gru = run_optimization(space, 'gru', X_train_gru, y_train, X_test_gru, y_test, scaler, early_stopping)
-    
-        end_time = time.time()
-        duration = end_time - start_time
-        
-        st.write(f"Total time taken for prediction: {duration:.2f} seconds")
-    
-        st.header("Results for LSTM Model")
-        display_results(best_params_lstm, history_lstm, y_test_orig_lstm, y_pred_lstm)
-    
-        st.header("Results for GRU Model")
-        display_results(best_params_gru, history_gru, y_test_orig_gru, y_pred_gru)
-    
-        st.header("Visualize Predictions (LSTM)")
-        visualize_predictions(data, train_size, n_steps, y_test_orig_lstm, y_pred_lstm)
-    
-        st.header("Visualize Predictions (GRU)")
-        visualize_predictions(data, train_size, n_steps, y_test_orig_gru, y_pred_gru)
-    
-        st.header("Training History")
-        plot_training_history(history_lstm, history_gru)
+        st.plotly_chart(fig)
 
-
-def prepare_data(data, n_steps):
-    X, y = [], []
-    for i in range(len(data) - n_steps):
-        lag_values = data[i:(i + n_steps), 0]
-        X.append(lag_values)
-        y.append(data[i + n_steps, 0])
-    return np.array(X), np.array(y)
-
-
-def run_optimization(space, model_type, X_train, y_train, X_test, y_test, scaler, early_stopping):
-    trials = Trials()
-
-    best_params = fmin(fn=lambda params: objective(params, model_type, X_train, y_train, X_test, y_test, scaler, early_stopping),
-                      space=space, algo=tpe.suggest, max_evals=5, trials=trials)
-
-    best_params = space_eval(space, best_params)
-
-    final_model = build_model(best_params, model_type, X_train)
-
-    history = final_model.fit(X_train, y_train,
-                              epochs=best_params['epochs'],
-                              batch_size=best_params['batch_size'],
-                              verbose=2,
-                              validation_split=0.1,
-                              callbacks=[early_stopping])
-
-    y_pred = final_model.predict(X_test)
-    y_pred = scaler.inverse_transform(y_pred)
-    y_test_orig = scaler.inverse_transform(y_test.reshape(-1, 1))
-
-    return best_params, history, y_pred, y_test_orig
-
-
-def build_model(params, model_type, X_train):
-    model = Sequential()
-    if model_type == 'lstm':
-        model.add(LSTM(units=params['units'], return_sequences=True, activation='tanh', input_shape=(X_train.shape[1], 1)))
-        model.add(Dropout(params['dropout_rate']))
-        model.add(LSTM(units=params['units'], activation='tanh'))
-        model.add(Dense(units=1))
-    elif model_type == 'gru':
-        model.add(GRU(units=params['units'], return_sequences=True, activation='tanh', input_shape=(X_train.shape[1], 1)))
-        model.add(Dropout(params['dropout_rate']))
-        model.add(GRU(units=params['units'], activation='tanh'))
-        model.add(Dense(units=1))
-
-    model.compile(optimizer=Adamax(learning_rate=params['learning_rate']), loss='mean_squared_error')
-    return model
-
-
-def objective(params, model_type, X_train, y_train, X_test, y_test, scaler, early_stopping):
-    final_model = build_model(params, model_type, X_train)
-    history = final_model.fit(X_train, y_train,
-                              epochs=params['epochs'],
-                              batch_size=params['batch_size'],
-                              verbose=0,
-                              validation_split=0.1,
-                              callbacks=[early_stopping])
-
-    y_pred = final_model.predict(X_test)
-    y_pred = scaler.inverse_transform(y_pred)
-    y_test_orig = scaler.inverse_transform(y_test.reshape(-1, 1))
-
-    mse = mean_squared_error(y_test_orig, y_pred)
-    return mse
-
-
-def display_results(best_params, history, y_test_orig, y_pred):
-    mse = mean_squared_error(y_test_orig, y_pred)
-    rmse = math.sqrt(mse)
-    mape = np.mean(np.abs((y_test_orig - y_pred) / y_test_orig)) * 100
-
-    st.write("Best Hyperparameters:", best_params)
-    st.write("Mean Squared Error (MSE):", mse)
-    st.write("Root Mean Squared Error (RMSE):", rmse)
-    st.write("Mean Absolute Percentage Error (MAPE):", mape)
-
-    st.line_chart(pd.DataFrame({'Train Loss': history.history['loss'], 'Validation Loss': history.history['val_loss']}))
-
-
-def visualize_predictions(data, train_size, n_steps, y_test_orig, y_pred):
-    fig = go.Figure()
-
-    fig.add_trace(go.Scatter(x=data.index[train_size + n_steps:],
-                             y=y_test_orig.flatten(),
-                             mode='lines',
-                             name="Actual Stock Prices",
-                             line=dict(color='blue')))
-
-    fig.add_trace(go.Scatter(x=data.index[train_size + n_steps:],
-                             y=y_pred.flatten(),
-                             mode='lines',
-                             name="Predicted Stock Prices",
-                             line=dict(color='red')))
-
-    fig.update_layout(title="Stock Price Prediction",
-                      xaxis_title="Date",
-                      yaxis_title="Stock Price (IDR)",
-                      template='plotly_dark')
-
-    st.plotly_chart(fig)
-
-
-def plot_training_history(history_lstm, history_gru):
-    plt.figure(figsize=(16, 8))
-
-    plt.subplot(2, 1, 1)
-    plt.plot(history_lstm.history['loss'], label='Train Loss (LSTM)', color='blue')
-    plt.plot(history_lstm.history['val_loss'], label='Validation Loss (LSTM)', color='red')
-    plt.title('Training Loss for LSTM')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-
-    plt.subplot(2, 1, 2)
-    plt.plot(history_gru.history['loss'], label='Train Loss (GRU)', color='green')
-    plt.plot(history_gru.history['val_loss'], label='Validation Loss (GRU)', color='orange')
-    plt.title('Training Loss for GRU')
-    plt.xlabel('Epoch')
-    plt.ylabel('Loss')
-    plt.legend()
-
-    plt.tight_layout()
-    st.pyplot()
+        # Display forecast table with actual prices
+        st.write("Forecast Table:")
+        forecast_df = pd.DataFrame({"Actual Price": actual, "Forecast": forecast}).set_index(actual.index)
+        # Format the index to remove time component
+        forecast_df.index = forecast_df.index.strftime('%Y-%m-%d')
+        st.write(forecast_df)
 
 if __name__ == "__main__":
     main()

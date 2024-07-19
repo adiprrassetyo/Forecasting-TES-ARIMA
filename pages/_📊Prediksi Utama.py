@@ -1,323 +1,120 @@
 import streamlit as st
-import appdirs as ad
-ad.user_cache_dir = lambda *args: "/tmp"
+import joblib
 import yfinance as yf
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import load_model
-from sklearn.metrics import mean_squared_error, mean_absolute_error
-import math
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
 import plotly.graph_objects as go
-import plotly.subplots as sp
 from plotly.subplots import make_subplots
-import plotly.graph_objects as go
-import datetime
-from datetime import timedelta
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.arima.model import ARIMA
+from warnings import simplefilter
+
+simplefilter(action='ignore', category=FutureWarning)
+simplefilter(action='ignore', category=DeprecationWarning)
+
+# Load models
+cryptos = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD"]
+models_tes = {}
+models_arima = {}
+
+for crypto in cryptos:
+    models_tes[crypto] = joblib.load(f"best_tes_model_close_{crypto}.pkl")
+    models_arima[crypto] = joblib.load(f"best_arima_model_close_{crypto}.pkl")
 
 # Streamlit app
 def main():
-    st.title("Prediksi Crypto Metaverse")
-    st.write("Sistem Prediksi menggunakan Algoritma Long Short Term Memory dan Gated Recurrent Unit, sistem ini sudah melakukan pelatihan model sehingga user bisa melakukan prediksi dengan cepat, model dilatih dengan hasil dan parameter yang terbaik.")
+    st.title("Top 5 Cryptocurrency Price Prediction")
+    st.write("This app predicts cryptocurrency prices using Triple Exponential Smoothing and ARIMA models. The models are trained on historical data for faster predictions.")
+
     # Sidebar Input Data
-    #--------------------#
     st.sidebar.header("Data Download")
-    stock_symbol =st.sidebar.selectbox("Masukkan Nama Coin:", ["STX4847-USD", "ICP-USD", "RNDR-USD", "AXS-USD", "WEMIX-USD", "SAND-USD", "THETA-USD", "MANA-USD", "APE-USD", "ENJ-USD", "ZIL-USD", "ILV-USD", "SUSHI-USD", "MIC27033-USD", "HIGH-USD", "FLOKI-USD", "EGLD-USD", "MASK8536-USD"])
-    start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2022-01-01"))
-    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2024-01-01"))
+    stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
+    start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2021-01-01"))
+    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2023-12-31"))
+    model_choice = st.sidebar.radio("Select Model:", ["Triple Exponential Smoothing (TES)", "ARIMA"])
+
     # Download stock price data
     data = yf.download(stock_symbol, start=start_date, end=end_date)
-    #--------------------#
 
-    # Proses Seluruh Data | 4 Future
-    #------------------------------#
-    close_prices = data['Close'].values.reshape(-1, 1)
-    scaler_close = MinMaxScaler(feature_range=(0, 1))
-    scaled_data_close = scaler_close.fit_transform(close_prices)
-    
-    open_prices = data['Open'].values.reshape(-1, 1)
-    scaler_open = MinMaxScaler(feature_range=(0, 1))
-    scaled_data_open = scaler_open.fit_transform(open_prices)
-    
-    high_prices = data['High'].values.reshape(-1, 1)
-    scaler_high = MinMaxScaler(feature_range=(0, 1))
-    scaled_data_high = scaler_high.fit_transform(high_prices)
-    
-    low_prices = data['Low'].values.reshape(-1, 1)
-    scaler_low = MinMaxScaler(feature_range=(0, 1))
-    scaled_data_low = scaler_low.fit_transform(low_prices)
-    #------------------------------#
+    # Process Close Prices
+    close_prices = data['Close']
+    open_prices = data['Open']
+    high_prices = data['High']
+    low_prices = data['Low']
 
+    # Split data
+    train_size = int(len(close_prices) * 0.8)
+    train_close = close_prices[:train_size]
+    test_close = close_prices[train_size:]
+    train_open = open_prices[:train_size]
+    test_open = open_prices[train_size:]
+    train_high = high_prices[:train_size]
+    test_high = high_prices[train_size:]
+    train_low = low_prices[:train_size]
+    test_low = low_prices[train_size:]
 
-    # Data preparation
-    #-----------------#
-    n_steps = 120
-    X, y = prepare_data_close(scaled_data_close, n_steps)
-    A, b = prepare_data_open(scaled_data_open, n_steps)
-    C, d = prepare_data_high(scaled_data_high, n_steps)
-    P, q = prepare_data_low(scaled_data_low, n_steps)
-
-    # Splitting into train and test sets
-    train_size_close = int(len(X) * 0.8)
-    X_train, X_test = X[:train_size_close], X[train_size_close:]
-    y_train, y_test = y[:train_size_close], y[train_size_close:]
-    
-    train_size_open = int(len(A) * 0.8)
-    A_train, A_test = A[:train_size_open], A[train_size_open:]
-    b_train, b_test = b[:train_size_open], b[train_size_open:]
-    
-    train_size_high = int(len(C) * 0.8)
-    C_train, C_test = C[:train_size_high], C[train_size_high:]
-    d_train, d_test = d[:train_size_high], b[train_size_high:]
-    
-    train_size_low = int(len(P) * 0.8)
-    P_train, P_test = P[:train_size_low], P[train_size_low:]
-    q_train, q_test = q[:train_size_low], q[train_size_low:]
-    #-----------------#
-    
-    # Reshape data for LSTM and GRU models
-    X_train_lstm = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_test_lstm = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-    X_train_gru = X_train.reshape((X_train.shape[0], X_train.shape[1], 1))
-    X_test_gru = X_test.reshape((X_test.shape[0], X_test.shape[1], 1))
-
-
-    # Sidebar for model selection
-    #---------------------------#
-    st.sidebar.header("Select Model")
-    model_type = st.sidebar.selectbox("Select Model Type:", ["LSTM", "GRU"])
-
-    # Mengambil Mode
-    if model_type == "LSTM":
-        final_model = load_model("stx_model_lstm.h5")
+    # Forecasting
+    if model_choice == "Triple Exponential Smoothing (TES)":
+        model_tes, alpha, beta, gamma = models_tes[stock_symbol]
+        forecast_close = model_tes.forecast(steps=len(test_close))
+        forecast_open = ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_open))
+        forecast_high = ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_high))
+        forecast_low = ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_low))
     else:
-        final_model = load_model("stx_model_gru.h5")
-        
-    if model_type == "LSTM":
-        final_model_high = load_model("high_model_lstm.h5")
-    else:
-        final_model_high = load_model("high_model_gru.h5")
-    
-    if model_type == "LSTM":
-        final_model_open = load_model("open_model_lstm.h5")
-    else:
-        final_model_open = load_model("open_model_gru.h5")
-        
-    if model_type == "LSTM":
-        final_model_low = load_model("low_model_lstm.h5")
-    else:
-        final_model_low = load_model("low_model_gru.h5")
-    #---------------------------#
+        model_arima, order = models_arima[stock_symbol]
+        forecast_close = model_arima.forecast(steps=len(test_close))
+        forecast_open = ARIMA(train_open, order=order).fit().forecast(steps=len(test_open))
+        forecast_high = ARIMA(train_high, order=order).fit().forecast(steps=len(test_high))
+        forecast_low = ARIMA(train_low, order=order).fit().forecast(steps=len(test_low))
 
-    # Model evaluation
-    #-----------------#
-    y_pred = final_model.predict(X_test)
-    y_pred = scaler_close.inverse_transform(y_pred)
-    y_test_orig = scaler_close.inverse_transform(y_test.reshape(-1, 1))
-    
-    b_pred = final_model_open.predict(A_test)
-    b_pred = scaler_open.inverse_transform(b_pred)
-    b_test_orig = scaler_open.inverse_transform(b_test.reshape(-1, 1))
-    
-    d_pred = final_model_high.predict(C_test)
-    d_pred = scaler_high.inverse_transform(d_pred)
-    d_test_orig = scaler_high.inverse_transform(d_test.reshape(-1, 1))
-    
-    q_pred = final_model_low.predict(P_test)
-    q_pred = scaler_low.inverse_transform(q_pred)
-    q_test_orig = scaler_low.inverse_transform(q_test.reshape(-1, 1))
+    # Model Evaluation
+    rmse_close = np.sqrt(mean_squared_error(test_close, forecast_close))
+    mape_close = mean_absolute_percentage_error(test_close, forecast_close)
 
-    # Perhitungan Evaluasi
-    #--------------------#
-    mse_close = mean_squared_error(y_pred, y_test_orig)    #  perhitungan MSE
-    rmse_close = math.sqrt(mse_close)                      #  perhitungan RMSE    
-    mad_close = np.mean(np.abs(y_test_orig - y_pred))      #  perhitungan MAD
-    mape_close = np.mean(np.abs((y_test_orig - y_pred) / y_test_orig)) * 100
-    
-    mse_open = mean_squared_error(b_test_orig, b_pred)    #  perhitungan MSE
-    rmse_open = math.sqrt(mse_open)                       #  perhitungan RMSE    
-    mad_open = np.mean(np.abs(b_test_orig - b_pred))      #  perhitungan MAD
-    mape_open = np.mean(np.abs((b_test_orig - b_pred) / b_test_orig)) * 100
-    
-    mse_high = mean_squared_error(d_test_orig, d_pred)    #  perhitungan MSE
-    rmse_high = math.sqrt(mse_high)                       #  perhitungan RMSE    
-    mad_high = np.mean(np.abs(d_test_orig - d_pred))      #  perhitungan MAD
-    mape_high = np.mean(np.abs((d_test_orig - d_pred) / d_test_orig)) * 100
-    
-    mse_low = mean_squared_error(q_test_orig, q_pred)    #  perhitungan MSE
-    rmse_low = math.sqrt(mse_low)                       #  perhitungan RMSE    
-    mad_low = np.mean(np.abs(q_test_orig - q_pred))      #  perhitungan MAD
-    mape_low = np.mean(np.abs((q_test_orig - q_pred) / q_test_orig)) * 100
-    #-----------------------------------------------#
-    
-    #-----------------Selected Price----------------#
-    CloseTab, OpenTab, HighTab, LowTab, ActualTab, ResultTab = st.tabs(["Close", "Open", "High", "Low", "Actual", "All Result"])
-    
-    with CloseTab:
-        # Display results
-        st.header(f"Results Close Price {stock_symbol} for {model_type} Model")
-        st.write("Root Mean Squared Error (RMSE):", round(rmse_close, 5))
-        st.write("Mean Absolute Error (MAE):", round (mad_close, 5))
-        st.write("Mean Absolute Percentage Error (MAPE):", round (mape_close, 5)) 
-        
-        # Visualize predictions
-        visualize_predictions_close(data, train_size_close, n_steps, y_test_orig, y_pred)
-        
-        # Display combined actual and predicted data table with time information
-        st.header("Table Close Harga Asli dan Harga Prediksi")
-        
-        # Add time information to the header
-        st.write("Data range:", data.index[train_size_close + n_steps:].min(), "to", data.index[train_size_close + n_steps:].max())
-        
-        # Calculate the difference between actual and predicted prices
-        price_difference_close = y_test_orig.flatten() - y_pred.flatten()
-        
-        # Calculate the percentage difference
-        percentage_difference_close = (price_difference_close / y_test_orig.flatten()) * 100
-        
-        # Convert predicted prices to strings and cut off decimal places after the 5th digit
-        predicted_prices_str_close = [f"{val:.5f}" for val in y_pred.flatten()]
-        
-        # Combine data, time information, and price difference into one dataframe with column names
-        combined_data_close = pd.DataFrame({
-            'Tanggal': data.index.date[train_size_close + n_steps:],
-            'Actual_Prices': y_test_orig.flatten(),
-            'Predicted_Prices': predicted_prices_str_close,
-            'Price_Difference': (price_difference_close),
-            'Percentage_Difference': (percentage_difference_close)
-        })
-    
-        # Format the 'Percentage_Difference' column to include the percentage symbol
-        combined_data_close['Percentage_Difference'] = combined_data_close['Percentage_Difference'].map("{:.2f}%".format)
+    rmse_open = np.sqrt(mean_squared_error(test_open, forecast_open))
+    mape_open = mean_absolute_percentage_error(test_open, forecast_open)
 
-        # Display the combined data table
-        st.table(combined_data_close)
-        
-        average_actual_prices = combined_data_close['Actual_Prices'].mean()
-        average_price_difference = combined_data_close['Price_Difference'].mean()
-        average_percentage_difference = combined_data_close['Percentage_Difference'].str.rstrip('%').astype('float').mean()
+    rmse_high = np.sqrt(mean_squared_error(test_high, forecast_high))
+    mape_high = mean_absolute_percentage_error(test_high, forecast_high)
 
-        # Display the averages
-        st.write("Average Actual Prices:", average_actual_prices)
-        st.write("Average Price Difference:", average_price_difference)
-        st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
-        
-        
-    with OpenTab:
-        # Display results
-        st.header(f"Results Open Price for {model_type} Model")
-        st.write("Root Mean Squared Error (RMSE):", round(rmse_open, 5))
-        st.write("Mean Absolute Error (MAE):", round (mad_close, 5))
-        st.write("Mean Absolute Percentage Error (MAPE):", round (mape_open, 5))
-        
-        # Visualize predictions
-        visualize_predictions_open(data, train_size_open, n_steps, b_test_orig, b_pred)
-        
-        # Display combined actual and predicted data table with time information
-        st.header("Table Open Harga Asli dan Harga Prediksi")
-        st.write("Data range:", data.index[train_size_open + n_steps:].min(), "to", data.index[train_size_open + n_steps:].max())
-        price_difference_open = b_test_orig.flatten() - b_pred.flatten()
-        percentage_difference_open = (price_difference_open / b_test_orig.flatten()) * 100
-        predicted_prices_str_open = [f"{val:.5f}" for val in b_pred.flatten()]
-        combined_data_open = pd.DataFrame({
-            'Tanggal': data.index.date[train_size_open + n_steps:],
-            'Actual_Prices': b_test_orig.flatten(),
-            'Predicted_Prices': predicted_prices_str_open,
-            'Price_Difference': abs(price_difference_open),
-            'Percentage_Difference': abs(percentage_difference_open)
-        })
-        combined_data_open['Percentage_Difference'] = combined_data_open['Percentage_Difference'].map("{:.2f}%".format)
-        # Display the combined data table
-        st.table(combined_data_open)
-        
-        average_actual_prices = combined_data_open['Actual_Prices'].mean()
-        average_price_difference = combined_data_open['Price_Difference'].mean()
-        average_percentage_difference = combined_data_open['Percentage_Difference'].str.rstrip('%').astype('float').mean()
+    rmse_low = np.sqrt(mean_squared_error(test_low, forecast_low))
+    mape_low = mean_absolute_percentage_error(test_low, forecast_low)
 
-        # Display the averages
-        st.write("Average Actual Prices:", average_actual_prices)
-        st.write("Average Price Difference:", average_price_difference)
-        st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
-        
-    
-    with HighTab:
-        # Display results
-        st.header(f"Results High Price for {model_type} Model")
-        st.write("Root Mean Squared Error (RMSE):", round(rmse_high, 5))
-        st.write("Mean Absolute Error (MAE):", round (mad_close, 5))
-        st.write("Mean Absolute Percentage Error (MAPE):", round (mape_high, 5))
-        
-        # Visualize predictions
-        visualize_predictions_high(data, train_size_high, n_steps, d_test_orig, d_pred)
-        
-        # Display combined actual and predicted data table with time information
-        st.header("Table High Harga Asli dan Harga Prediksi")
-        st.write("Data range:", data.index[train_size_high + n_steps:].min(), "to", data.index[train_size_high + n_steps:].max())
-        price_difference_high = d_test_orig.flatten() - d_pred.flatten()
-        percentage_difference_high = (price_difference_high / d_test_orig.flatten()) * 100
-        predicted_prices_str_high = [f"{val:.5f}" for val in d_pred.flatten()]
-        combined_data_high = pd.DataFrame({
-            'Tanggal': data.index.date[train_size_high + n_steps:],
-            'Actual_Prices': d_test_orig.flatten(),
-            'Predicted_Prices': predicted_prices_str_high,
-            'Price_Difference': abs(price_difference_high),
-            'Percentage_Difference': abs(percentage_difference_high)
-        })
-        combined_data_high['Percentage_Difference'] = combined_data_high['Percentage_Difference'].map("{:.2f}%".format)
-        # Display the combined data table
-        st.table(combined_data_high)
-        
-        average_actual_prices = combined_data_high['Actual_Prices'].mean()
-        average_price_difference = combined_data_high['Price_Difference'].mean()
-        average_percentage_difference = combined_data_high['Percentage_Difference'].str.rstrip('%').astype('float').mean()
+    tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(["Close Prices", "Open Prices", "High Prices", "Low Prices", "Actual Prices", "All Predicted Prices"])
 
-        # Display the averages
-        st.write("Average Actual Prices:", average_actual_prices)
-        st.write("Average Price Difference:", average_price_difference)
-        st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
-        
+    with tab1:
+        st.header(f"Results Close Price {stock_symbol} for {model_choice} Model")
+        st.write(f"{model_choice} - RMSE:", round(rmse_close, 5))
+        st.write(f"{model_choice} - MAPE:", round(mape_close * 100, 5), "%")
+        visualize_predictions(data, train_size, test_close, forecast_close, 'Close')
+        display_forecast_table(f"Table {model_choice} Model - Close Predicted Prices ", data.index[train_size:], test_close, forecast_close, key='close')
 
-    with LowTab:
-        # Display results
-        st.header(f"Results Low Price for {model_type} Model")
-        st.write("Root Mean Squared Error (RMSE):", round(rmse_low, 5))
-        st.write("Mean Absolute Error (MAE):", round (mad_close, 5))
-        st.write("Mean Absolute Percentage Error (MAPE):", round (mape_low, 5))
-        
-        # Visualize predictions
-        visualize_predictions_low(data, train_size_low, n_steps, q_test_orig, q_pred)
-        
-        # Display combined actual and predicted data table with time information
-        st.header("Table Low Harga Asli dan Harga Prediksi")
-        st.write("Data range:", data.index[train_size_low + n_steps:].min(), "to", data.index[train_size_low + n_steps:].max())
-        price_difference_low = q_test_orig.flatten() - q_pred.flatten()
-        percentage_difference_low = (price_difference_low / q_test_orig.flatten()) * 100
-        predicted_prices_str_low = [f"{val:.5f}" for val in q_pred.flatten()]
-        combined_data_low = pd.DataFrame({
-            'Tanggal': data.index.date[train_size_low + n_steps:],
-            'Actual_Prices': q_test_orig.flatten(),
-            'Predicted_Prices': predicted_prices_str_low,
-            'Price_Difference': abs(price_difference_low),
-            'Percentage_Difference': abs(percentage_difference_low)
-        })
-        combined_data_low['Percentage_Difference'] = combined_data_low['Percentage_Difference'].map("{:.2f}%".format)
-        # Display the combined data table
-        st.table(combined_data_low)
+    with tab2:
+        st.header(f"Results Open Price {stock_symbol} for {model_choice} Model")
+        st.write(f"{model_choice} - RMSE:", round(rmse_open, 5))
+        st.write(f"{model_choice} - MAPE:", round(mape_open * 100, 5), "%")
+        visualize_predictions(data, train_size, test_open, forecast_open, 'Open')
+        display_forecast_table(f"Table {model_choice} Model - Open Predicted Prices ", data.index[train_size:], test_open, forecast_open, key='open')
 
-        average_actual_prices = combined_data_low['Actual_Prices'].mean()
-        average_price_difference = combined_data_low['Price_Difference'].mean()
-        average_percentage_difference = combined_data_low['Percentage_Difference'].str.rstrip('%').astype('float').mean()
+    with tab3:
+        st.header(f"Results High Price {stock_symbol} for {model_choice} Model")
+        st.write(f"{model_choice} - RMSE:", round(rmse_high, 5))
+        st.write(f"{model_choice} - MAPE:", round(mape_high * 100, 5), "%")
+        visualize_predictions(data, train_size, test_high, forecast_high, 'High')
+        display_forecast_table(f"Table {model_choice} Model - High Predicted Prices ", data.index[train_size:], test_high, forecast_high, key='high')
 
-        # Display the averages
-        st.write("Average Actual Prices:", average_actual_prices)
-        st.write("Average Price Difference:", average_price_difference)
-        st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
-
-    with ActualTab:
-        # Display results
-        st.header(f"Results Actual Price for {model_type} Model")
+    with tab4:
+        st.header(f"Results Low Price {stock_symbol} for {model_choice} Model")
+        st.write(f"{model_choice} - RMSE:", round(rmse_low, 5))
+        st.write(f"{model_choice} - MAPE:", round(mape_low * 100, 5), "%")
+        visualize_predictions(data, train_size, test_low, forecast_low, 'Low')
+        display_forecast_table(f"Table {model_choice} Model - Low Predicted Prices ", data.index[train_size:], test_low, forecast_low, key='low')
         
-        # Plot all prices
+    with tab5:
+        st.header("Actual Price History")
+        st.write("Actual stock prices history for the selected cryptocurrency.")
+
         fig_all_prices = go.Figure()
 
         fig_all_prices.add_trace(go.Scatter(x=data.index, y=data['Open'], mode='lines', name='Opening Price', line=dict(color='red')))
@@ -326,12 +123,13 @@ def main():
         fig_all_prices.add_trace(go.Scatter(x=data.index, y=data['High'], mode='lines', name='High Price', line=dict(color='blue')))
 
         fig_all_prices.update_layout(
-            title='Stock Price History',
+            title='Actual Stock Price History',
             xaxis=dict(title='Date'),
             yaxis=dict(title='Stock Price'),
             legend=dict(x=0, y=1, traceorder='normal', orientation='h'),
         )
 
+        st.plotly_chart(fig_all_prices)
         # Plot subplots for each individual price
         fig_subplots = make_subplots(rows=2, cols=2, subplot_titles=('Opening Price', 'Closing Price', 'Low Price', 'High Price'))
 
@@ -342,245 +140,130 @@ def main():
 
         fig_subplots.update_layout(title='Stock Price Subplots', showlegend=False)
 
-        st.plotly_chart(fig_all_prices)
         st.plotly_chart(fig_subplots)
-        
-        # Display combined actual and predicted data table with time information
+
+        # Display combined actual data table with time information
         st.header("Table All Price")
-        
-        # Add time information to the header
-        st.write("Data range:", start_date, "to", end_date)
 
-        # Combine data, time information, and price difference into one dataframe with column names
+        # Combine data and time information into one dataframe with column names
         combined_data_all_actual = pd.DataFrame({
-            'Close_Predict':data['Close'],
-            'Open_Predict': data['Open'],
-            'High_Predict': data['High'],
-            'Low_Predict': data['Low']
-
+            'Date': data.index.date,
+            'Open': data['Open'],
+            'Close': data['Close'],
+            'High': data['High'],
+            'Low': data['Low']
         })
-    
+
         # Display the combined data table
-        st.table(combined_data_all_actual)
+        st.write("Data range:", start_date, "to", end_date)
+        st.table(combined_data_all_actual.reset_index(drop=True))
         
-    with ResultTab:
-        # Display results
-        st.header(f"Results All Price Prediction for {model_type} Model")
-        
-        # Visualize predictions
-        visualize_predictions_all_pred(data, train_size_open, train_size_close, train_size_high, train_size_low, n_steps, b_pred, y_pred, d_pred, q_pred)
-        
-        # Display combined actual and predicted data table with time information
-        st.header("Table All Price Prediction")
-        
-        # Add time information to the header
-        st.write("Data range:", data.index[train_size_close + n_steps:].min(), "to", data.index[train_size_close + n_steps:].max())
+    with tab6:
+        st.header("All Predicted Prices")
+        st.write("Predicted stock prices for the selected cryptocurrency.")
 
-        # Combine data, time information, and price difference into one dataframe with column names
-        combined_data_all = pd.DataFrame({
-            'Tanggal': data.index.date[train_size_close + n_steps:],
-            'Close_Predict': predicted_prices_str_close,
-            'Open_Predict': predicted_prices_str_open,
-            'High_Predict': predicted_prices_str_high,
-            'Low_Predict': predicted_prices_str_low
+        # Plot all predicted prices
+        fig_all_predicted = go.Figure()
 
+        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_open, mode='lines', name='Predicted Opening Price', line=dict(color='red')))
+        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_close, mode='lines', name='Predicted Closing Price', line=dict(color='green')))
+        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_low, mode='lines', name='Predicted Low Price', line=dict(color='yellow')))
+        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_high, mode='lines', name='Predicted High Price', line=dict(color='blue')))
+
+        fig_all_predicted.update_layout(
+            title='All Predicted Prices',
+            xaxis=dict(title='Date'),
+            yaxis=dict(title='Stock Price'),
+            legend=dict(x=0, y=1, traceorder='normal', orientation='h'),
+        )
+
+        st.plotly_chart(fig_all_predicted)
+
+        # Display combined predicted data table
+        st.header("Table All Predicted Prices")
+
+        # Combine predicted data into one dataframe with column names
+        combined_data_all_predicted = pd.DataFrame({
+            'Date': data.index[train_size:],
+            'Predicted_Open': forecast_open,
+            'Predicted_Close': forecast_close,
+            'Predicted_High': forecast_high,
+            'Predicted_Low': forecast_low
         })
-    
+
         # Display the combined data table
-        st.table(combined_data_all)
-        
-#---------------------------------------#
-def prepare_data_close(data, n_steps):
-    X, y = [], []
-    for i in range(len(data) - n_steps):
-        lag_values_close = data[i:(i + n_steps), 0]
-        X.append(np.concatenate([lag_values_close, [data[i + n_steps, 0]]]))
-        y.append(data[i + n_steps, 0])
-    return np.array(X), np.array(y)
+        st.table(combined_data_all_predicted.reset_index(drop=True))
 
-def prepare_data_open(data, n_steps):
-    A, b = [], []
-    for i in range(len(data) - n_steps):
-        lag_values_open = data[i:(i + n_steps), 0]
-        A.append(np.concatenate([lag_values_open, [data[i + n_steps, 0]]]))
-        b.append(data[i + n_steps, 0])
-    return np.array(A), np.array(b)
+def visualize_predictions(data, train_size, y_test, y_pred, price_type):
+    fig = go.Figure()
 
-def prepare_data_high(data, n_steps):
-    C, d = [], []
-    for i in range(len(data) - n_steps):
-        lag_values_high = data[i:(i + n_steps), 0]
-        C.append(np.concatenate([lag_values_high, [data[i + n_steps, 0]]]))
-        d.append(data[i + n_steps, 0])
-    return np.array(C), np.array(d)
-
-def prepare_data_low(data, n_steps):
-    P, q = [], []
-    for i in range(len(data) - n_steps):
-        lag_values_low = data[i:(i + n_steps), 0]
-        P.append(np.concatenate([lag_values_low, [data[i + n_steps, 0]]]))
-        q.append(data[i + n_steps, 0])
-    return np.array(P), np.array(q)
-#---------------------------------------#
-
-#Visual Grafik_Close
-def visualize_predictions_close(data, train_size_close, n_steps, y_test_orig, y_pred):
-    fig_close = go.Figure()
-
-    fig_close.add_trace(go.Scatter(x=data.index[:train_size_close + n_steps],  # Menambahkan n_steps untuk data latih
-                             y=data['Close'][:train_size_close + n_steps],  # Menambahkan n_steps untuk data latih
+    # Add training data
+    fig.add_trace(go.Scatter(x=data.index[:train_size],
+                             y=data[price_type][:train_size],
                              mode='lines',
                              name="Training Data",
                              line=dict(color='gray')))
 
-    fig_close.add_trace(go.Scatter(x=data.index[train_size_close + n_steps:],
-                             y=y_test_orig.flatten(),
+    # Add actual stock prices
+    fig.add_trace(go.Scatter(x=data.index[train_size:],
+                             y=y_test,
                              mode='lines',
-                             name="Actual Stock Prices",
+                             name="Actual Prices",
                              line=dict(color='blue')))
 
-    fig_close.add_trace(go.Scatter(x=data.index[train_size_close + n_steps:],
-                             y=y_pred.flatten(),
+    # Add predictions
+    fig.add_trace(go.Scatter(x=data.index[train_size:],
+                             y=y_pred,
                              mode='lines',
-                             name="Predicted Stock Prices",
+                             name="Predicted Prices",
                              line=dict(color='red')))
 
-    fig_close.update_layout(title="Close Price Prediction",
+    fig.update_layout(title=f"{price_type} Price Prediction",
                       xaxis_title="Date",
-                      yaxis_title="Stock Price (USD)",
+                      yaxis_title="Price (USD)",
                       template='plotly_dark')
+
+    st.plotly_chart(fig)
+
+def display_forecast_table(title, dates, actual, predicted, key):
+    st.write(f"### {title}")
     
-        
+    price_difference = actual - predicted
+    percentage_difference = (price_difference / actual) * 100
 
-    st.plotly_chart(fig_close)
+    combined_data = pd.DataFrame({
+        'Tanggal': dates.date,
+        'Actual_Prices': actual,
+        'Predicted_Prices': predicted,
+        'Price_Difference': price_difference.abs(),
+        'Percentage_Difference': percentage_difference.abs().map("{:.2f}%".format)
+    })
 
 
-#Visual Grafik_Open
-def visualize_predictions_open(data, train_size_open, n_steps, b_test_orig, b_pred):
-    fig_open = go.Figure()
-
-    fig_open.add_trace(go.Scatter(x=data.index[:train_size_open + n_steps],  # Menambahkan n_steps untuk data latih
-                             y=data['Open'][:train_size_open + n_steps],  # Menambahkan n_steps untuk data latih
-                             mode='lines',
-                             name="Training Data",
-                             line=dict(color='gray')))
-
-    fig_open.add_trace(go.Scatter(x=data.index[train_size_open + n_steps:],
-                             y=b_test_orig.flatten(),
-                             mode='lines',
-                             name="Actual Stock Prices",
-                             line=dict(color='blue')))
-
-    fig_open.add_trace(go.Scatter(x=data.index[train_size_open + n_steps:],
-                             y=b_pred.flatten(),
-                             mode='lines',
-                             name="Predicted Stock Prices",
-                             line=dict(color='red')))
-
-    fig_open.update_layout(title="Open Price Prediction",
-                      xaxis_title="Date",
-                      yaxis_title="Stock Price (USD)",
-                      template='plotly_dark')
+    # Display the combined data table
+    st.write("Data range:", dates.min(), "to", dates.max())
     
-        
+    # Display the combined data table
+    st.table(combined_data.reset_index(drop=True))
 
-    st.plotly_chart(fig_open)
-    
+    average_actual_prices = combined_data['Actual_Prices'].mean()
+    average_price_difference = combined_data['Price_Difference'].mean()
+    average_percentage_difference = combined_data['Percentage_Difference'].str.rstrip('%').astype('float').mean()
 
-#Visual Grafik_High
-def visualize_predictions_high(data, train_size_high, n_steps, d_test_orig, d_pred):
-    fig_high = go.Figure()
+    # Display the averages
+    st.write("Average Actual Prices:", average_actual_prices)
+    st.write("Average Price Difference:", average_price_difference)
+    st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
 
-    fig_high.add_trace(go.Scatter(x=data.index[:train_size_high + n_steps],  # Menambahkan n_steps untuk data latih
-                             y=data['High'][:train_size_high + n_steps],  # Menambahkan n_steps untuk data latih
-                             mode='lines',
-                             name="Training Data",
-                             line=dict(color='gray')))
-
-    fig_high.add_trace(go.Scatter(x=data.index[train_size_high + n_steps:],
-                             y=d_test_orig.flatten(),
-                             mode='lines',
-                             name="Actual Stock Prices",
-                             line=dict(color='blue')))
-
-    fig_high.add_trace(go.Scatter(x=data.index[train_size_high + n_steps:],
-                             y=d_pred.flatten(),
-                             mode='lines',
-                             name="Predicted Stock Prices",
-                             line=dict(color='red')))
-
-    fig_high.update_layout(title="High Price Prediction",
-                      xaxis_title="Date",
-                      yaxis_title="Stock Price (USD)",
-                      template='plotly_dark')
-        
-    st.plotly_chart(fig_high)
-    
-
-#Visual Grafik_Low
-def visualize_predictions_low(data, train_size_low, n_steps, q_test_orig, q_pred):
-    fig_low = go.Figure()
-
-    fig_low.add_trace(go.Scatter(x=data.index[:train_size_low + n_steps],  # Menambahkan n_steps untuk data latih
-                             y=data['Low'][:train_size_low + n_steps],  # Menambahkan n_steps untuk data latih
-                             mode='lines',
-                             name="Training Data",
-                             line=dict(color='gray')))
-
-    fig_low.add_trace(go.Scatter(x=data.index[train_size_low + n_steps:],
-                             y=q_test_orig.flatten(),
-                             mode='lines',
-                             name="Actual Stock Prices",
-                             line=dict(color='blue')))
-
-    fig_low.add_trace(go.Scatter(x=data.index[train_size_low + n_steps:],
-                             y=q_pred.flatten(),
-                             mode='lines',
-                             name="Predicted Stock Prices",
-                             line=dict(color='red')))
-
-    fig_low.update_layout(title="Low Price Prediction",
-                      xaxis_title="Date",
-                      yaxis_title="Stock Price (USD)",
-                      template='plotly_dark')
-        
-    st.plotly_chart(fig_low)
-
-    
-#Visual Grafik All Predict
-def visualize_predictions_all_pred(data,train_size_open,train_size_close, train_size_high, train_size_low, n_steps, b_pred, y_pred, d_pred, q_pred):
-    fig_all_prices_predict = go.Figure()
-    
-    fig_all_prices_predict.add_trace(go.Scatter(x=data.index[train_size_open + n_steps:],
-                            y=b_pred.flatten(),
-                            mode='lines',
-                            name="Prediksi Open",
-                            line=dict(color='red')))
-    
-    fig_all_prices_predict.add_trace(go.Scatter(x=data.index[train_size_close + n_steps:],
-                             y=y_pred.flatten(),
-                             mode='lines',
-                             name="Prediksi Close",
-                             line=dict(color='green')))
-    
-    fig_all_prices_predict.add_trace(go.Scatter(x=data.index[train_size_high + n_steps:],
-                             y=d_pred.flatten(),
-                             mode='lines',
-                             name="Prediksi High",
-                             line=dict(color='blue')))
-    
-    fig_all_prices_predict.add_trace(go.Scatter(x=data.index[train_size_low + n_steps:],
-                             y=q_pred.flatten(),
-                             mode='lines',
-                             name="Prediksi Low",
-                             line=dict(color='yellow')))
-    
-    fig_all_prices_predict.update_layout(title="All Price Prediction",
-                      xaxis_title="Date",
-                      yaxis_title="Stock Price (USD)",
-                      template='plotly_dark')
-    
-    st.plotly_chart(fig_all_prices_predict)
+    # Add a download button for the CSV file
+    csv = combined_data.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download data as CSV",
+        data=csv,
+        file_name='forecast_data.csv',
+        mime='text/csv',
+        key=key
+    )
 
 if __name__ == "__main__":
     main()

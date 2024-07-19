@@ -8,15 +8,12 @@ def get_crypto_data(coins):
     for coin in coins:
         crypto_info = yf.Ticker(coin)
         if crypto_info:
-            crypto_name = crypto_info.info['longName']
+            crypto_name = crypto_info.info.get('longName', 'N/A')
             crypto_symbol = coin
             
             # Mendapatkan harga koin kripto
             crypto_price = get_crypto_price(crypto_info)
             
-            # Mendapatkan URL gambar ikon koin kripto
-            crypto_icon = crypto_info.info.get('logo_url')
-
             # Tambahkan informasi ke dalam list
             crypto_list.append({
                 'Nama': crypto_name,
@@ -37,11 +34,17 @@ def get_crypto_price(crypto_info):
     return None
 
 def main():
-    st.title('Tabel Koin Kripto Ekosistem Metaverse📊')
-    st.write("Seiring dengan pesatnya pertumbuhan teknologi, metaverse menjadi sorotan utama, terutama dalam ranah asset kripto. Perkembangan terbaru menunjukkan bagaimana asset kripto semakin terintegrasi dalam ekosistem metaverse, menciptakan peluang baru dan mengubah paradigma cara kita berinteraksi di dunia maya. Semula ekosistem metaverse digunakan oleh para pengembang teknologi untuk simulasi permainan, tetapi saat ini ekosistem metaverse juga dapat melakukan transaksi jual beli dengan menggunakan mata uang kripto hingga kepemilikan non fungible token (NFT) Hal ini menunjukkan bahwa variasi jenis aset kripto digunakan secara fleksibel pada ekosistem metaverse dan salah satu volatilitas yang tinggi dalam ekosistem yang ada pada dunia kripto. Berikut daftar 15 kripto paling populer dalam ekosistem metaverse :")
+    st.title('Analisis Perbandingan Kinerja Metode TES dan ARIMA pada Peramalan Harga Cryptocurrency📊')
+    st.write("""
+        Dalam era digital ini, cryptocurrency telah menjadi salah satu aset investasi yang menarik perhatian banyak pihak. Volatilitas harga yang tinggi membuat prediksi harga cryptocurrency menjadi tantangan yang menarik untuk dieksplorasi.
+
+        Pada penelitian ini, dilakukan analisis perbandingan kinerja dua metode peramalan, yaitu Triple Exponential Smoothing (TES) dan Autoregressive Integrated Moving Average (ARIMA), dalam memprediksi harga lima koin kripto teratas. Koin-koin tersebut adalah Bitcoin (BTC), Ethereum (ETH), Binance Coin (BNB), Solana (SOL), dan Ripple (XRP).
+
+        Berikut adalah daftar harga terkini dari kelima koin kripto tersebut:
+    """)
 
     # Koin yang ingin ditampilkan dalam tabel
-    coins = ['BTC-USD', 'STX4847-USD', 'RNDR-USD', 'ICP-USD', 'AXS-USD', 'WEMIX-USD', 'SAND-USD', 'THETA-USD', 'MANA-USD', 'APE-USD', 'ENJ-USD', 'ZIL-USD','ILV-USD', 'EGLD-USD','MASK8536-USD','SUSHI-USD']
+    coins = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD"]
 
     # Mendapatkan data koin kripto
     crypto_df = get_crypto_data(coins)
@@ -49,7 +52,9 @@ def main():
     # Menampilkan tabel koin kripto
     st.table(crypto_df)
     
-    st.write('Untuk lebih lengkap nya dapat dilihat pada CoinMarketCap https://coinmarketcap.com/view/metaverse/')
-    
+    st.write("""
+        Data di atas menunjukkan harga terkini dari masing-masing koin kripto. Analisis lebih lanjut akan membandingkan kinerja metode TES dan ARIMA dalam memprediksi harga dari koin-koin tersebut. Untuk informasi lebih lengkap, kunjungi [CoinMarketCap](https://coinmarketcap.com/view/metaverse/).
+    """)
+
 if __name__ == '__main__':
     main()

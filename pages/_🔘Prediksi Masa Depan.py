@@ -1,135 +1,230 @@
+import streamlit as st
+import joblib
+import yfinance as yf
 import numpy as np
 import pandas as pd
-import yfinance as yf
-from sklearn.preprocessing import MinMaxScaler
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Dense, LSTM, GRU, Dropout
-from tensorflow.keras.callbacks import EarlyStopping
-import streamlit as st
-import plotly.graph_objs as go
-from plotly.subplots import make_subplots
+from sklearn.metrics import mean_squared_error, mean_absolute_percentage_error
+import plotly.graph_objects as go
+from statsmodels.tsa.holtwinters import ExponentialSmoothing
+from statsmodels.tsa.arima.model import ARIMA
+from warnings import simplefilter
 
-# Ambil data dari Yahoo Finance
-def get_data(ticker, start_date, end_date):
-    df = yf.download(ticker, start=start_date, end=end_date)
-    df['MA50'] = df['Close'].rolling(window=50).mean()
-    df['MA200'] = df['Close'].rolling(window=200).mean()
-    return df[['Close', 'MA50', 'MA200']].dropna()
+simplefilter(action='ignore', category=FutureWarning)
+simplefilter(action='ignore', category=DeprecationWarning)
 
-# Pra-pemrosesan data
-def preprocess_data(data, time_step=60):
-    scaler = MinMaxScaler(feature_range=(0, 1))
-    data_scaled = scaler.fit_transform(data)
+# Load models
+cryptos = ["BTC-USD", "ETH-USD", "BNB-USD", "SOL-USD", "XRP-USD"]
+models_tes = {}
+models_arima = {}
+
+for crypto in cryptos:
+    models_tes[crypto] = joblib.load(f"best_tes_model_close_{crypto}.pkl")
+    models_arima[crypto] = joblib.load(f"best_arima_model_close_{crypto}.pkl")
+
+# Streamlit app
+def main():
+    st.title("Top 5 Cryptocurrency Price Prediction")
+    st.write("This app predicts cryptocurrency prices using Triple Exponential Smoothing and ARIMA models. The models are trained on historical data for faster predictions.")
+
+    # Sidebar Input Data
+    st.sidebar.header("Data Download")
+    stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
+
+    # Download stock price data
+    data = yf.download(stock_symbol, start="2021-01-01", end="2023-12-31")
+
+    # Process Close Prices
+    close_prices = data['Close']
+    open_prices = data['Open']
+    high_prices = data['High']
+    low_prices = data['Low']
+
+    # Split data
+    train_size = int(len(close_prices) * 0.8)
+    train_close = close_prices[:train_size]
+    test_close = close_prices[train_size:]
+    train_open = open_prices[:train_size]
+    test_open = open_prices[train_size:]
+    train_high = high_prices[:train_size]
+    test_high = high_prices[train_size:]
+    train_low = low_prices[:train_size]
+    test_low = low_prices[train_size:]
+
+    # Forecast Inputs
+    st.header("Forecast Parameters")
+    forecast_start_date = st.date_input("Forecast Start Date", pd.to_datetime("2024-01-01"))
+    forecast_end_date = st.date_input("Forecast End Date", pd.to_datetime("2024-12-31"))
+    forecast_period = st.slider("Forecast Period (days)", 1, 365, 30)
     
-    x_train, y_train = [], []
-    for i in range(time_step, len(data_scaled)):
-        x_train.append(data_scaled[i-time_step:i])
-        y_train.append(data_scaled[i, 0])
+    # Ensure forecast_period does not exceed the range
+    if (forecast_end_date - forecast_start_date).days < forecast_period:
+        forecast_period = (forecast_end_date - forecast_start_date).days
+
+    forecast_steps = forecast_period
+
+    # Forecasting
+    model_tes, alpha, beta, gamma = models_tes[stock_symbol]
+    model_arima, order = models_arima[stock_symbol]
+
+    # Future dates
+    future_dates = pd.date_range(start=forecast_start_date, end=forecast_end_date)
     
-    x_train, y_train = np.array(x_train), np.array(y_train)
-    return x_train, y_train, scaler
+    # Adjust forecast_steps to match the length of future_dates if necessary
+    forecast_steps = min(forecast_steps, len(future_dates))
 
-# Buat dan latih model LSTM
-def create_lstm_model(x_train, y_train, epochs=100, batch_size=32):
-    model = Sequential()
-    model.add(LSTM(100, return_sequences=True, input_shape=(x_train.shape[1], x_train.shape[2])))
-    model.add(Dropout(0.2))
-    model.add(LSTM(100, return_sequences=True))
-    model.add(Dropout(0.2))
-    model.add(LSTM(50, return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(25, activation='relu'))
-    model.add(Dense(1, activation='linear'))
+    # Future Forecasts
+    forecast_future_tes_close = model_tes.forecast(steps=forecast_steps)
+    forecast_future_arima_close = model_arima.forecast(steps=(forecast_steps))
+    forecast_future_tes_open = ExponentialSmoothing(open_prices, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=forecast_steps)
+    forecast_future_arima_open = ARIMA(open_prices, order=order).fit().forecast(steps=forecast_steps)
+    forecast_future_tes_high = ExponentialSmoothing(high_prices, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=forecast_steps)
+    forecast_future_arima_high = ARIMA(high_prices, order=order).fit().forecast(steps=forecast_steps)
+    forecast_future_tes_low = ExponentialSmoothing(low_prices, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=forecast_steps)
+    forecast_future_arima_low = ARIMA(low_prices, order=order).fit().forecast(steps=forecast_steps)
+
+    # Ensure the lengths match for future dates and forecasts
+    future_dates = future_dates[:forecast_steps]
     
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-    model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
-    return model
+    # Model Evaluation
+    rmse_tes_close = np.sqrt(mean_squared_error(test_close, model_tes.forecast(steps=len(test_close))))
+    mape_tes_close = mean_absolute_percentage_error(test_close, model_tes.forecast(steps=len(test_close)))
+    rmse_arima_close = np.sqrt(mean_squared_error(test_close, model_arima.forecast(steps=len(test_close))))
+    mape_arima_close = mean_absolute_percentage_error(test_close, model_arima.forecast(steps=len(test_close)))
 
-# Buat dan latih model GRU
-def create_gru_model(x_train, y_train, epochs=100, batch_size=32):
-    model = Sequential()
-    model.add(GRU(100, return_sequences=True, input_shape=(x_train.shape[1], x_train.shape[2])))
-    model.add(Dropout(0.2))
-    model.add(GRU(100, return_sequences=True))
-    model.add(Dropout(0.2))
-    model.add(GRU(50, return_sequences=False))
-    model.add(Dropout(0.2))
-    model.add(Dense(25, activation='relu'))
-    model.add(Dense(1, activation='linear'))
-    
-    model.compile(optimizer='adam', loss='mean_squared_error')
-    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-    model.fit(x_train, y_train, epochs=epochs, batch_size=batch_size, validation_split=0.2, callbacks=[early_stopping])
-    return model
+    rmse_tes_open = np.sqrt(mean_squared_error(test_open, ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_open))))
+    mape_tes_open = mean_absolute_percentage_error(test_open, ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_open)))
+    rmse_arima_open = np.sqrt(mean_squared_error(test_open, ARIMA(train_open, order=order).fit().forecast(steps=len(test_open))))
+    mape_arima_open = mean_absolute_percentage_error(test_open, ARIMA(train_open, order=order).fit().forecast(steps=len(test_open)))
 
-# Prediksi masa depan
-def predict_future(model, last_sequence, steps_ahead, scaler, time_step=60):
-    predictions = []
-    last_sequence = last_sequence.reshape((1, time_step, last_sequence.shape[1]))
-    
-    for _ in range(steps_ahead):
-        pred = model.predict(last_sequence)
-        predictions.append(pred[0, 0])
-        # Membuat array dengan dimensi yang sesuai untuk prediksi berikutnya
-        pred_full = np.zeros((1, 1, last_sequence.shape[2]))
-        pred_full[0, 0, 0] = pred
-        last_sequence = np.append(last_sequence[:, 1:, :], pred_full, axis=1)
-    
-    predictions = np.array(predictions).reshape(-1, 1)
-    # Hanya menggunakan scaler untuk kolom 'Close'
-    inverse_predictions = scaler.inverse_transform(
-        np.concatenate([predictions, np.zeros((predictions.shape[0], 2))], axis=1)
-    )[:, 0].reshape(-1, 1)
-    inverse_predictions = np.maximum(inverse_predictions, 0)
-    return inverse_predictions
+    rmse_tes_high = np.sqrt(mean_squared_error(test_high, ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_high))))
+    mape_tes_high = mean_absolute_percentage_error(test_high, ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_high)))
+    rmse_arima_high = np.sqrt(mean_squared_error(test_high, ARIMA(train_high, order=order).fit().forecast(steps=len(test_high))))
+    mape_arima_high = mean_absolute_percentage_error(test_high, ARIMA(train_high, order=order).fit().forecast(steps=len(test_high)))
 
-# Streamlit UI
-st.title('Cryptocurrency Price Prediction')
-ticker = st.selectbox("Masukkan Nama Coin:", ["STX4847-USD", "ICP-USD", "RNDR-USD", "AXS-USD", "WEMIX-USD", "SAND-USD", "THETA-USD", "MANA-USD", "APE-USD", "ENJ-USD", "ZIL-USD", "ILV-USD", "EGLD-USD", "MASK8536-USD","HIGH-USD", "SUSHI-USD", "MIC27033-USD"])
-start_date = st.date_input('Start Date', pd.to_datetime('2022-05-01'))
-end_date = st.date_input('End Date', pd.to_datetime('2024-05-01'))
-steps_ahead = st.slider('Days to Predict Ahead', 1, 180, 30)
+    rmse_tes_low = np.sqrt(mean_squared_error(test_low, ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_low))))
+    mape_tes_low = mean_absolute_percentage_error(test_low, ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_low)))
+    rmse_arima_low = np.sqrt(mean_squared_error(test_low, ARIMA(train_low, order=order).fit().forecast(steps=len(test_low))))
+    mape_arima_low = mean_absolute_percentage_error(test_low, ARIMA(train_low, order=order).fit().forecast(steps=len(test_low)))
 
-if st.button('Predict'):
-    data = get_data(ticker, start_date, end_date)
-    
-    time_step = 60
-    x_train, y_train, scaler = preprocess_data(data, time_step)
+    tab1, tab2, tab3, tab4 = st.tabs(["Close Prices", "Open Prices", "High Prices", "Low Prices"])
 
-    lstm_model = create_lstm_model(x_train, y_train)
-    gru_model = create_gru_model(x_train, y_train)
+    with tab1:
+        st.header(f"Results Close Price {stock_symbol} for TES and ARIMA Models")
+        st.write("Triple Exponential Smoothing - RMSE:", round(rmse_tes_close, 5))
+        st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_close * 100, 5), "%")
+        st.write("ARIMA - RMSE:", round(rmse_arima_close, 5))
+        st.write("ARIMA - MAPE:", round(mape_arima_close * 100, 5), "%")
+        visualize_predictions(data, train_size, test_close, model_tes.forecast(steps=len(test_close)), model_arima.forecast(steps=len(test_close)), 'Close')
+        st.subheader("Future Predictions for Close Prices")
+        visualize_future_predictions(future_dates, forecast_future_tes_close, forecast_future_arima_close, 'Close')
+        display_future_table(future_dates, forecast_future_tes_close, forecast_future_arima_close, 'Close')
 
-    last_sequence = data[['Close', 'MA50', 'MA200']].values[-time_step:]
-    last_sequence = scaler.transform(last_sequence)
+    with tab2:
+        st.header(f"Results Open Price {stock_symbol} for TES and ARIMA Models")
+        st.write("Triple Exponential Smoothing - RMSE:", round(rmse_tes_open, 5))
+        st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_open * 100, 5), "%")
+        st.write("ARIMA - RMSE:", round(rmse_arima_open, 5))
+        st.write("ARIMA - MAPE:", round(mape_arima_open * 100, 5), "%")
+        visualize_predictions(data, train_size, test_open, ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_open)), ARIMA(train_open, order=order).fit().forecast(steps=len(test_open)), 'Open')
+        st.subheader("Future Predictions for Open Prices")
+        visualize_future_predictions(future_dates, forecast_future_tes_open, forecast_future_arima_open, 'Open')
+        display_future_table(future_dates, forecast_future_tes_open, forecast_future_arima_open, 'Open')
 
-    lstm_predictions = predict_future(lstm_model, last_sequence, steps_ahead, scaler, time_step)
-    gru_predictions = predict_future(gru_model, last_sequence, steps_ahead, scaler, time_step)
+    with tab3:
+        st.header(f"Results High Price {stock_symbol} for TES and ARIMA Models")
+        st.write("Triple Exponential Smoothing - RMSE:", round(rmse_tes_high, 5))
+        st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_high * 100, 5), "%")
+        st.write("ARIMA - RMSE:", round(rmse_arima_high, 5))
+        st.write("ARIMA - MAPE:", round(mape_arima_high * 100, 5), "%")
+        visualize_predictions(data, train_size, test_high, ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_high)), ARIMA(train_high, order=order).fit().forecast(steps=len(test_high)), 'High')
+        st.subheader("Future Predictions for High Prices")
+        visualize_future_predictions(future_dates, forecast_future_tes_high, forecast_future_arima_high, 'High')
+        display_future_table(future_dates, forecast_future_tes_high, forecast_future_arima_high, 'High')
 
-    future_dates = pd.date_range(start=data.index[-1], periods=steps_ahead + 1, freq='D')[1:]
+    with tab4:
+        st.header(f"Results Low Price {stock_symbol} for TES and ARIMA Models")
+        st.write("Triple Exponential Smoothing - RMSE:", round(rmse_tes_low, 5))
+        st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_low * 100, 5), "%")
+        st.write("ARIMA - RMSE:", round(rmse_arima_low, 5))
+        st.write("ARIMA - MAPE:", round(mape_arima_low * 100, 5), "%")
+        visualize_predictions(data, train_size, test_low, ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=12).fit(smoothing_level=alpha, smoothing_slope=beta, smoothing_seasonal=gamma).forecast(steps=len(test_low)), ARIMA(train_low, order=order).fit().forecast(steps=len(test_low)), 'Low')
+        st.subheader("Future Predictions for Low Prices")
+        visualize_future_predictions(future_dates, forecast_future_tes_low, forecast_future_arima_low, 'Low')
+        display_future_table(future_dates, forecast_future_tes_low, forecast_future_arima_low, 'Low')
 
-    # Plot with Plotly
-    fig = make_subplots()
+def visualize_predictions(data, train_size, y_test, y_pred_tes, y_pred_arima, price_type):
+    fig = go.Figure()
 
-    fig.add_trace(go.Scatter(x=data.index, y=data['Close'], mode='lines', name='Actual Prices'))
-    fig.add_trace(go.Scatter(x=future_dates, y=lstm_predictions.flatten(), mode='lines', name='LSTM Predictions'))
-    fig.add_trace(go.Scatter(x=future_dates, y=gru_predictions.flatten(), mode='lines', name='GRU Predictions'))
+    # Add training data
+    fig.add_trace(go.Scatter(x=data.index[:train_size],
+                             y=data[price_type][:train_size],
+                             mode='lines',
+                             name="Training Data",
+                             line=dict(color='gray')))
 
-    fig.update_layout(
-        title=f'{ticker} Price Prediction',
-        xaxis_title='Date',
-        yaxis_title='Price',
-        legend=dict(x=0, y=1)
-    )
+    # Add actual stock prices
+    fig.add_trace(go.Scatter(x=data.index[train_size:],
+                             y=y_test,
+                             mode='lines',
+                             name="Actual Prices",
+                             line=dict(color='blue')))
+
+    # Add TES predictions
+    fig.add_trace(go.Scatter(x=data.index[train_size:],
+                             y=y_pred_tes,
+                             mode='lines',
+                             name="TES Predictions",
+                             line=dict(color='red')))
+
+    # Add ARIMA predictions
+    fig.add_trace(go.Scatter(x=data.index[train_size:],
+                             y=y_pred_arima,
+                             mode='lines',
+                             name="ARIMA Predictions",
+                             line=dict(color='green')))
+
+    fig.update_layout(title=f"{price_type} Price Prediction for TES & ARIMA",
+                      xaxis_title="Date",
+                      yaxis_title="Price (USD)",
+                      template='plotly_dark')
 
     st.plotly_chart(fig)
 
-    # Display predictions in a table
-    prediction_df = pd.DataFrame({
-        'Date': future_dates,
-        'LSTM Prediction': lstm_predictions.flatten().round(5),
-        'GRU Prediction': gru_predictions.flatten().round(5)
-    })
+def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type):
+    fig = go.Figure()
 
-    st.write("Predicted Prices:")
-    st.dataframe(prediction_df)
+    # Add future dates
+    fig.add_trace(go.Scatter(x=dates,
+                             y=y_pred_tes,
+                             mode='lines',
+                             name="TES Future Predictions",
+                             line=dict(color='red')))
+
+    # Add ARIMA future predictions
+    fig.add_trace(go.Scatter(x=dates,
+                             y=y_pred_arima,
+                             mode='lines',
+                             name="ARIMA Future Predictions",
+                             line=dict(color='green')))
+
+    fig.update_layout(title=f"Future {price_type} Price Prediction for TES & ARIMA",
+                      xaxis_title="Date",
+                      yaxis_title="Price (USD)",
+                      template='plotly_dark')
+
+    st.plotly_chart(fig)
+
+def display_future_table(dates, y_pred_tes, y_pred_arima, price_type):
+    # Display table
+    st.write(f"Table Future Predictions for {price_type} Prices")
+    # Create DataFrame for future predictions
+    df_future = pd.DataFrame({
+        'Date': dates.date,
+        'TES Prediction': y_pred_tes,
+        'ARIMA Prediction': y_pred_arima
+    })
+        # Display the combined data table
+    st.table(df_future.reset_index(drop=True))
+
+if __name__ == "__main__":
+    main()
