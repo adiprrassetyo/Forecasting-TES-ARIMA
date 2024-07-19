@@ -1,0 +1,12 @@
+Streamlit
+yfinance
+NumPy
+Pandas
+Matplotlib
+Scikit-Learn
+Plotly
+Pyngrok
+Hyperopt
+Datetime
+Appdirs
+Statsmodels
