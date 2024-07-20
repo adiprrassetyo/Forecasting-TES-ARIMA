@@ -32,7 +32,7 @@ def main():
     st.sidebar.header("Data Download")
     stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
     start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2021-01-01"))
-    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2023-12-31"))
+    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2024-01-01"))
     model_choice = st.sidebar.radio("Select Model:", ["Triple Exponential Smoothing (TES)", "ARIMA"])
 
     # Update title based on selections

@@ -31,11 +31,19 @@ def main():
     st.sidebar.header("Data Download")
     stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
     start_date = st.sidebar.date_input("Start Date", pd.to_datetime("2021-01-01"))
-    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2023-12-31"))
+    end_date = st.sidebar.date_input("End Date", pd.to_datetime("2024-01-01"))
     model_choice = st.sidebar.radio("Select Model:", ["Triple Exponential Smoothing (TES)", "ARIMA"])
+
+    # Ensure end_date is after start_date
+    if end_date < start_date:
+        st.sidebar.error("End date must be after start date.")
+        return
 
     # Download stock price data
     data = yf.download(stock_symbol, start=start_date, end=end_date)
+    if data.empty:
+        st.error("No data found for the selected date range.")
+        return
 
     # Process Close Prices
     close_prices = data['Close']
@@ -130,7 +138,7 @@ def main():
         )
 
         st.plotly_chart(fig_all_prices)
-        # Plot subplots for each individual price
+
         fig_subplots = make_subplots(rows=2, cols=2, subplot_titles=('Opening Price', 'Closing Price', 'Low Price', 'High Price'))
 
         fig_subplots.add_trace(go.Scatter(x=data.index, y=data['Open'], mode='lines', name='Opening Price', line=dict(color='red')), row=1, col=1)
@@ -142,10 +150,8 @@ def main():
 
         st.plotly_chart(fig_subplots)
 
-        # Display combined actual data table with time information
         st.header("Table All Price")
 
-        # Combine data and time information into one dataframe with column names
         combined_data_all_actual = pd.DataFrame({
             'Date': data.index.date,
             'Open': data['Open'],
@@ -154,7 +160,6 @@ def main():
             'Low': data['Low']
         })
 
-        # Display the combined data table
         st.write("Data range:", start_date, "to", end_date)
         st.table(combined_data_all_actual.reset_index(drop=True))
         
@@ -162,13 +167,16 @@ def main():
         st.header("All Predicted Prices")
         st.write("Predicted stock prices for the selected cryptocurrency.")
 
-        # Plot all predicted prices
         fig_all_predicted = go.Figure()
 
-        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_open, mode='lines', name='Predicted Opening Price', line=dict(color='red')))
-        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_close, mode='lines', name='Predicted Closing Price', line=dict(color='green')))
-        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_low, mode='lines', name='Predicted Low Price', line=dict(color='yellow')))
-        fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_high, mode='lines', name='Predicted High Price', line=dict(color='blue')))
+        if len(data.index[train_size:]) == len(forecast_open):
+            fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_open, mode='lines', name='Predicted Opening Price', line=dict(color='red')))
+            fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_close, mode='lines', name='Predicted Closing Price', line=dict(color='green')))
+            fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_low, mode='lines', name='Predicted Low Price', line=dict(color='yellow')))
+            fig_all_predicted.add_trace(go.Scatter(x=data.index[train_size:], y=forecast_high, mode='lines', name='Predicted High Price', line=dict(color='blue')))
+        else:
+            st.error("Length of forecast data does not match the length of the test period.")
+            return
 
         fig_all_predicted.update_layout(
             title='All Predicted Prices',
@@ -179,10 +187,8 @@ def main():
 
         st.plotly_chart(fig_all_predicted)
 
-        # Display combined predicted data table
         st.header("Table All Predicted Prices")
 
-        # Combine predicted data into one dataframe with column names
         combined_data_all_predicted = pd.DataFrame({
             'Date': data.index[train_size:],
             'Predicted_Open': forecast_open,
@@ -191,27 +197,23 @@ def main():
             'Predicted_Low': forecast_low
         })
 
-        # Display the combined data table
         st.table(combined_data_all_predicted.reset_index(drop=True))
 
 def visualize_predictions(data, train_size, y_test, y_pred, price_type):
     fig = go.Figure()
 
-    # Add training data
     fig.add_trace(go.Scatter(x=data.index[:train_size],
                              y=data[price_type][:train_size],
                              mode='lines',
                              name="Training Data",
                              line=dict(color='gray')))
 
-    # Add actual stock prices
     fig.add_trace(go.Scatter(x=data.index[train_size:],
                              y=y_test,
                              mode='lines',
                              name="Actual Prices",
                              line=dict(color='blue')))
 
-    # Add predictions
     fig.add_trace(go.Scatter(x=data.index[train_size:],
                              y=y_pred,
                              mode='lines',
@@ -227,7 +229,12 @@ def visualize_predictions(data, train_size, y_test, y_pred, price_type):
 
 def display_forecast_table(title, dates, actual, predicted, key):
     st.write(f"### {title}")
-    
+
+    min_len = min(len(dates), len(actual), len(predicted))
+    dates = dates[:min_len]
+    actual = actual[:min_len]
+    predicted = predicted[:min_len]
+
     price_difference = actual - predicted
     percentage_difference = (price_difference / actual) * 100
 
@@ -239,23 +246,17 @@ def display_forecast_table(title, dates, actual, predicted, key):
         'Percentage_Difference': percentage_difference.abs().map("{:.2f}%".format)
     })
 
-
-    # Display the combined data table
     st.write("Data range:", dates.min(), "to", dates.max())
-    
-    # Display the combined data table
     st.table(combined_data.reset_index(drop=True))
 
     average_actual_prices = combined_data['Actual_Prices'].mean()
     average_price_difference = combined_data['Price_Difference'].mean()
     average_percentage_difference = combined_data['Percentage_Difference'].str.rstrip('%').astype('float').mean()
 
-    # Display the averages
     st.write("Average Actual Prices:", average_actual_prices)
     st.write("Average Price Difference:", average_price_difference)
     st.write("Average Percentage Difference: {:.2f}%".format(average_percentage_difference))
 
-    # Add a download button for the CSV file
     csv = combined_data.to_csv(index=False).encode('utf-8')
     st.download_button(
         label="Download data as CSV",

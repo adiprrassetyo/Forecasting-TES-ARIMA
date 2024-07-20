@@ -31,7 +31,7 @@ def main():
     stock_symbol = st.sidebar.selectbox("Select Cryptocurrency:", cryptos)
 
     # Download stock price data
-    data = yf.download(stock_symbol, start="2021-01-01", end="2023-12-31")
+    data = yf.download(stock_symbol, start="2021-01-01", end="2024-01-01")
 
     # Process Close Prices
     close_prices = data['Close']
