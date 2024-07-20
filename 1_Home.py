@@ -25,9 +25,9 @@ def main():
     - **🧹 Pembersihan Data**: Proses pembersihan data dengan menghapus duplikasi, menangani nilai yang hilang, dll. Langkah ini sangat penting karena seringkali data tidak bersih dan mengandung banyak nilai yang hilang dan outlier.<br> <br>
     - **⚙️ Pra-pemrosesan Data**: Proses mengubah data ke dalam format yang sesuai untuk analisis. Ini termasuk menangani fitur kategorikal, fitur numerik, penskalaan dan transformasi, dll.<br> <br>
     - **💡 Rekayasa Fitur**: Proses yang memanipulasi fitur itu sendiri. Terdiri dari beberapa langkah seperti ekstraksi fitur, transformasi fitur, dan pemilihan fitur.<br> <br>
-    - **✂️ Pembagian Data**: Proses membagi data menjadi set pelatihan, validasi, dan pengujian. Set pelatihan digunakan untuk melatih model, set validasi digunakan untuk menyetel hiperparameter, dan set pengujian digunakan untuk mengevaluasi model.<br> <br>
+    - **✂️ Pembagian Data**: Proses membagi data menjadi set pelatihan dan pengujian. Set pelatihan digunakan untuk melatih model dan set pengujian digunakan untuk mengevaluasi model.<br> <br>
     - **🧠 Membangun Model Pembelajaran Mesin**: Model yang digunakan pada aplikasi ini adalah Triple Exponential Smoothing (TES) dan Autoregressive Integrated Moving Average (ARIMA).<br> <br>
-    - **⚖️ Evaluasi Model Pembelajaran Mesin**: Proses mengevaluasi model prediksi dengan menggunakan metrik seperti Mean Absolute Percentage Error (MAPE), Mean Squared Error (MSE), dan Root Mean Squared Error (RMSE).<br> <br>
+    - **⚖️ Evaluasi Model Pembelajaran Mesin**: Proses mengevaluasi model prediksi dengan menggunakan metrik seperti Mean Absolute Percentage Error (MAPE) dan Root Mean Squared Error (RMSE).<br> <br>
     """, unsafe_allow_html=True)
     
     st.markdown("""
@@ -54,20 +54,20 @@ def main():
     
     # Contributors
     st.header("👤 Kontributor")
-    st.markdown("Aplikasi ini dibuat dan dibangun oleh **Haris Yunanda Rangkuti** (200170154) untuk kebutuhan tugas akhir/skripsi.", unsafe_allow_html=True)
+    st.markdown("Aplikasi dibuat untuk kebutuhan tugas akhir/skripsi, **Adi Prasetyo** (200170002) .", unsafe_allow_html=True)
     new_line()
     
-    st.markdown("""Jika Anda memiliki pertanyaan atau saran, jangan ragu untuk menghubungi **yunandaharis@gmail.com**. Kami siap membantu!
+    st.markdown("""Jika Anda memiliki pertanyaan atau saran, jangan ragu untuk menghubungi **adiprstyo11@gmail.com**. Kami siap membantu!
 
 **Connect with us on social media:** 
 
-<a href="https://www.linkedin.com/in/harisyunanda20/" target="_blank">
+<a href="https://www.linkedin.com/in/adiprrassetyo/" target="_blank">
   <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcQe0adDoUGWVD3jGzfT8grK5Uhw0dLXSk3OWJwZaXI-t95suRZQ-wPF7-Az6KurXDVktV4&usqp=CAU" alt="LinkedIn" width="80" height="80" style="border-radius: 25%;">
 </a>       
-<a href="https://www.instagram.com/harisrangkuti_/" target="_blank">
+<a href="https://www.instagram.com/adiprrassetyo/" target="_blank">
   <img src="https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Instagram_logo_2016.svg/2048px-Instagram_logo_2016.svg.png" alt="Instagram" width="80" height="80" style="border-radius: 25%;">
 </a>       
-<a href="https://github.com/hayuraaa/" target="_blank">
+<a href="https://github.com/adiprrassetyo/" target="_blank">
   <img src="https://seeklogo.com/images/G/github-logo-5F384D0265-seeklogo.com.png" alt="GitHub" width="80" height="80" style="border-radius: 25%;">
 </a>
 
