@@ -34,7 +34,7 @@ def get_crypto_price(crypto_info):
     return None
 
 def main():
-    st.title('Analisis Perbandingan Kinerja Metode TES dan ARIMA pada Peramalan Harga Cryptocurrency📊')
+    st.title('Table of Top 5 Cryptocurrency📊')
     st.write("""
         Dalam era digital ini, cryptocurrency telah menjadi salah satu aset investasi yang menarik perhatian banyak pihak. Volatilitas harga yang tinggi membuat prediksi harga cryptocurrency menjadi tantangan yang menarik untuk dieksplorasi.
 
