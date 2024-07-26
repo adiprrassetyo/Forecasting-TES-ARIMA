@@ -93,15 +93,14 @@ def main():
         st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_close * 100, 5), "%")
         st.write("ARIMA - RMSE:", round(rmse_arima_close, 5))
         st.write("ARIMA - MAPE:", round(mape_arima_close * 100, 5), "%")
-        visualize_predictions(data, train_size, test_close, forecast_tes_close, forecast_arima_close, 'Close')
-
+        visualize_predictions(data, train_size, test_close, forecast_tes_close, forecast_arima_close, 'Close', )
     with tab2:
         st.header(f"Results Open Price {stock_symbol} for TES and ARIMA Models")
         st.write("Triple Exponential Smoothing - RMSE:", round(rmse_tes_open, 5))
         st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_open * 100, 5), "%")
         st.write("ARIMA - RMSE:", round(rmse_arima_open, 5))
         st.write("ARIMA - MAPE:", round(mape_arima_open * 100, 5), "%")
-        visualize_predictions(data, train_size, test_open, forecast_tes_open, forecast_arima_open, 'Open')
+        visualize_predictions(data, train_size, test_open, forecast_tes_open, forecast_arima_open, 'Open', )
 
     with tab3:
         st.header(f"Results High Price {stock_symbol} for TES and ARIMA Models")
@@ -109,7 +108,7 @@ def main():
         st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_high * 100, 5), "%")
         st.write("ARIMA - RMSE:", round(rmse_arima_high, 5))
         st.write("ARIMA - MAPE:", round(mape_arima_high * 100, 5), "%")
-        visualize_predictions(data, train_size, test_high, forecast_tes_high, forecast_arima_high, 'High')
+        visualize_predictions(data, train_size, test_high, forecast_tes_high, forecast_arima_high, 'High', )
 
     with tab4:
         st.header(f"Results Low Price {stock_symbol} for TES and ARIMA Models")
@@ -117,7 +116,7 @@ def main():
         st.write("Triple Exponential Smoothing - MAPE:", round(mape_tes_low * 100, 5), "%")
         st.write("ARIMA - RMSE:", round(rmse_arima_low, 5))
         st.write("ARIMA - MAPE:", round(mape_arima_low * 100, 5), "%")
-        visualize_predictions(data, train_size, test_low, forecast_tes_low, forecast_arima_low, 'Low')
+        visualize_predictions(data, train_size, test_low, forecast_tes_low, forecast_arima_low, 'Low', )
 
 def visualize_predictions(data, train_size, y_test, y_pred_tes, y_pred_arima, price_type):
     fig = go.Figure()
@@ -156,6 +155,39 @@ def visualize_predictions(data, train_size, y_test, y_pred_tes, y_pred_arima, pr
                       template='plotly_dark')
 
     st.plotly_chart(fig)
+    
+    # Create a table with the actual prices and predictions
+    table_data = {
+        'Date': data.index[train_size:].date,
+        'Actual Price': y_test,
+        'TES Prediction': y_pred_tes,
+        'ARIMA Prediction': y_pred_arima,
+        'TES Difference': y_test - y_pred_tes,
+        'ARIMA Difference': y_test - y_pred_arima
+    }
+    table_df = pd.DataFrame(table_data)
+    st.table(table_df.reset_index(drop=True))
+    
+    average_actual_prices = table_data['Actual Price'].mean()
+    average_TES_predict = table_data['TES Prediction'].mean()
+    average_ARIMA_predict = table_data['ARIMA Prediction'].mean()
+    average_TES_difference = table_data['TES Difference'].mean()
+    average_ARIMA_difference = table_data['ARIMA Difference'].mean()
 
+    st.write("Average Actual Prices:", average_actual_prices)
+    st.write("Average TES Predict Prices:", average_TES_predict)
+    st.write("Average ARIMA Predict Prices:", average_ARIMA_predict)
+    st.write("Average TES Difference:", average_TES_difference)
+    st.write("Average ARIMA Difference:", average_ARIMA_difference)
+
+    # csv = table_df.to_csv(index=False).encode('utf-8')
+    # st.download_button(
+    #     label="Download data as CSV",
+    #     data=csv,
+    #     file_name='forecast_tes_arima.csv',
+    #     mime='text/csv',
+    #     key='close'
+    # )
+    
 if __name__ == "__main__":
     main()
