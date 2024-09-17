@@ -7,6 +7,6 @@ plotly
 hyperopt
 appdirs
 datetime
-numpy
+numpy==1.26.4
 statsmodels
 pmdarima
