@@ -10,3 +10,4 @@ Hyperopt
 Datetime
 Appdirs
 Statsmodels
+Pmdarima
