@@ -1,12 +1,12 @@
 streamlit
 yfinance
-numpy
 pandas
 matplotlib
 scikit-learn
 plotly
 hyperopt
 appdirs
-statsmodels
-pmdarima
 datetime
+numpy==1.23.5
+statsmodels==0.14.0
+pmdarima==1.8.2
