@@ -10,4 +10,4 @@ Hyperopt
 Datetime
 Appdirs
 Statsmodels
-Pmdarima
+pmdarima==1.8.5
