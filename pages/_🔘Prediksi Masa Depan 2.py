@@ -20,7 +20,7 @@ def main():
         # Load dataset
         data = pd.read_csv(uploaded_file, parse_dates=True, index_col="Date")
         st.write("Dataset Preview:")
-        st.dataframe(data.head())
+        st.dataframe(data)
 
         # Process Prices
         close_prices = data['Close']
