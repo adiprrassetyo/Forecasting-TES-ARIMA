@@ -79,22 +79,22 @@ def main():
     with tab1:
         st.subheader(f"Future Predictions for Close Prices ({stock_symbol})")
         visualize_future_predictions(future_dates, forecast_future_tes_close, forecast_future_arima_close, 'Close', close_prices, close_prices.index)
-        display_future_table(future_dates, forecast_future_tes_close, forecast_future_arima_close, 'Close')
+        display_future_table(future_dates, forecast_future_tes_close, forecast_future_arima_close, 'Close', key='close')
         
     with tab2:
         st.subheader(f"Future Predictions for Open Prices ({stock_symbol})")
         visualize_future_predictions(future_dates, forecast_future_tes_open, forecast_future_arima_open, 'Open', open_prices, open_prices.index)
-        display_future_table(future_dates, forecast_future_tes_open, forecast_future_arima_open, 'Open')
+        display_future_table(future_dates, forecast_future_tes_open, forecast_future_arima_open, 'Open', key='open')
         
     with tab3:
         st.subheader(f"Future Predictions for High Prices ({stock_symbol})")
         visualize_future_predictions(future_dates, forecast_future_tes_high, forecast_future_arima_high, 'High', high_prices, high_prices.index)
-        display_future_table(future_dates, forecast_future_tes_high, forecast_future_arima_high, 'High')
+        display_future_table(future_dates, forecast_future_tes_high, forecast_future_arima_high, 'High', key='high')
 
     with tab4:
         st.subheader(f"Future Predictions for Low Prices ({stock_symbol})")
         visualize_future_predictions(future_dates, forecast_future_tes_low, forecast_future_arima_low, 'Low', low_prices, low_prices.index)
-        display_future_table(future_dates, forecast_future_tes_low, forecast_future_arima_low, 'Low')
+        display_future_table(future_dates, forecast_future_tes_low, forecast_future_arima_low, 'Low', key='low')
 
 def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type, real_data=None, real_dates=None):
     fig = go.Figure()
@@ -124,7 +124,7 @@ def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type, re
 
     st.plotly_chart(fig)
 
-def display_future_table(dates, y_pred_tes, y_pred_arima, price_type):
+def display_future_table(dates, y_pred_tes, y_pred_arima, price_type, key):
     # Display table
     st.write(f"Table Future Predictions for {price_type} Prices")
     # Create DataFrame for future predictions
@@ -135,6 +135,16 @@ def display_future_table(dates, y_pred_tes, y_pred_arima, price_type):
     })
     # Display the combined data table
     st.table(df_future.reset_index(drop=True))
+    
+    csv = df_future.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download data as CSV",
+        data=csv,
+        file_name='forecast_data.csv',
+        mime='text/csv',
+        key=key
+    )
+
 
 if __name__ == "__main__":
     main()

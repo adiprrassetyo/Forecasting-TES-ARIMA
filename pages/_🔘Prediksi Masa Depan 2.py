@@ -65,19 +65,19 @@ def main():
 
             with tab1:
                 st.subheader("Prediksi Harga Close")
-                display_results(future_dates, forecast_results['Close'], 'Close', historical_close_prices, historical_dates)
+                display_results(future_dates, forecast_results['Close'], 'Close', key='close', real_data=historical_close_prices, real_dates=historical_dates)
 
             with tab2:
                 st.subheader("Prediksi Harga Open")
-                display_results(future_dates, forecast_results['Open'], 'Open', historical_open_prices, historical_dates)
+                display_results(future_dates, forecast_results['Open'], 'Open', key='open', real_data=historical_open_prices, real_dates=historical_dates)
 
             with tab3:
                 st.subheader("Prediksi Harga High")
-                display_results(future_dates, forecast_results['High'], 'High', historical_high_prices, historical_dates)
+                display_results(future_dates, forecast_results['High'], 'High', key='high', real_data=historical_high_prices, real_dates=historical_dates)
 
             with tab4:
                 st.subheader("Prediksi Harga Low")
-                display_results(future_dates, forecast_results['Low'], 'Low', historical_low_prices, historical_dates)
+                display_results(future_dates, forecast_results['Low'], 'Low', key='low', real_data=historical_low_prices, real_dates=historical_dates)
 
 def predict_prices(prices, future_dates, forecast_steps, price_type):
     # TES Model (Holt-Winters Exponential Smoothing)
@@ -99,10 +99,11 @@ def predict_prices(prices, future_dates, forecast_steps, price_type):
         'ARIMA Prediction': forecast_future_arima
     }
 
-def display_results(dates, forecast_result, price_type, real_data=None, real_dates=None):
+def display_results(dates, forecast_result, price_type, key, real_data=None, real_dates=None):
     # Visualizations and Results
     visualize_future_predictions(dates, forecast_result['TES Prediction'], forecast_result['ARIMA Prediction'], price_type, real_data, real_dates)
-    display_future_table(dates, forecast_result['TES Prediction'], forecast_result['ARIMA Prediction'], price_type)
+    display_future_table(dates, forecast_result['TES Prediction'], forecast_result['ARIMA Prediction'], price_type, key)
+
 
 def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type, real_data=None, real_dates=None):
     fig = go.Figure()
@@ -124,13 +125,24 @@ def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type, re
 
     st.plotly_chart(fig)
 
-def display_future_table(dates, y_pred_tes, y_pred_arima, price_type):
+def display_future_table(dates, y_pred_tes, y_pred_arima, price_type, key=None):
     st.write(f"Tabel Prediksi Masa Depan untuk Harga {price_type}")
     df_future = pd.DataFrame({
         'Date': dates.date, 
         'TES Prediction': y_pred_tes, 
-        'ARIMA Prediction': y_pred_arima})
+        'ARIMA Prediction': y_pred_arima
+    })
     st.table(df_future.reset_index(drop=True))
+    
+    csv = df_future.to_csv(index=False).encode('utf-8')
+    st.download_button(
+        label="Download data as CSV",
+        data=csv,
+        file_name=f'forecast_data_{price_type}.csv',
+        mime='text/csv',
+        key=key
+    )
+
 
 if __name__ == "__main__":
     main()
