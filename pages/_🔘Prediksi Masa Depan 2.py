@@ -127,7 +127,7 @@ def visualize_future_predictions(dates, y_pred_tes, y_pred_arima, price_type, re
 def display_future_table(dates, y_pred_tes, y_pred_arima, price_type):
     st.write(f"Tabel Prediksi Masa Depan untuk Harga {price_type}")
     df_future = pd.DataFrame({
-        'Date': dates, 
+        'Date': dates.date, 
         'TES Prediction': y_pred_tes, 
         'ARIMA Prediction': y_pred_arima})
     st.table(df_future.reset_index(drop=True))
