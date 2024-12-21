@@ -47,17 +47,50 @@ def main():
 
     # Train TES Models
     st.write("Training Triple Exponential Smoothing models...")
-    tes_model_close = ExponentialSmoothing(train_close, trend='add', seasonal='add', seasonal_periods=12).fit()
-    tes_model_open = ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=12).fit()
-    tes_model_high = ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=12).fit()
-    tes_model_low = ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=12).fit()
+    tes_model_close = ExponentialSmoothing(train_close, trend='add', seasonal='add', seasonal_periods=7).fit(optimized=True)
+    tes_model_open = ExponentialSmoothing(train_open, trend='add', seasonal='add', seasonal_periods=7).fit(optimized=True)
+    tes_model_high = ExponentialSmoothing(train_high, trend='add', seasonal='add', seasonal_periods=7).fit(optimized=True)
+    tes_model_low = ExponentialSmoothing(train_low, trend='add', seasonal='add', seasonal_periods=7).fit(optimized=True)
 
-    # Train Auto ARIMA Models
     st.write("Training Auto ARIMA models...")
-    arima_model_close = auto_arima(train_close, start_p=0, max_p=5, start_q=0, max_q=5, d=None, seasonal=False, stepwise=True, trace=False)
-    arima_model_open = auto_arima(train_open, start_p=0, max_p=5, start_q=0, max_q=5, d=None, seasonal=False, stepwise=True, trace=False)
-    arima_model_high = auto_arima(train_high, start_p=0, max_p=5, start_q=0, max_q=5, d=None, seasonal=False, stepwise=True, trace=False)
-    arima_model_low = auto_arima(train_low, start_p=0, max_p=5, start_q=0, max_q=5, d=None, seasonal=False, stepwise=True, trace=False)
+
+    # Train Auto ARIMA Models with seasonal component enabled
+    arima_model_close = auto_arima(train_close, 
+                                start_p=0, max_p=5, 
+                                start_q=0, max_q=5, 
+                                d=None, 
+                                seasonal=True, 
+                                m=7,  # Misalnya, m=7 untuk musim mingguan (sesuaikan dengan data Anda)
+                                stepwise=True, 
+                                trace=False)
+
+    arima_model_open = auto_arima(train_open, 
+                                start_p=0, max_p=5, 
+                                start_q=0, max_q=5, 
+                                d=None, 
+                                seasonal=True, 
+                                m=7,  # Sesuaikan dengan musim yang relevan
+                                stepwise=True, 
+                                trace=False)
+
+    arima_model_high = auto_arima(train_high, 
+                                start_p=0, max_p=5, 
+                                start_q=0, max_q=5, 
+                                d=None, 
+                                seasonal=True, 
+                                m=7,  # Misalnya, musiman mingguan
+                                stepwise=True, 
+                                trace=False)
+
+    arima_model_low = auto_arima(train_low, 
+                                start_p=0, max_p=5, 
+                                start_q=0, max_q=5, 
+                                d=None, 
+                                seasonal=True, 
+                                m=7,  # Sesuaikan sesuai pola musiman
+                                stepwise=True, 
+                                trace=False)
+
 
     # Forecasting
     forecast_tes_close = tes_model_close.forecast(steps=len(test_close))
@@ -175,16 +208,14 @@ def visualize_predictions(data, train_size, y_test, y_pred_tes, y_pred_arima, pr
 
     # Membuat DataFrame untuk tabel
     table_data = {
-    'Date': data.index[train_size:].date,  # Pastikan data index sudah sesuai
-    'Actual Price': y_test.ravel(),  # Ubah ke 1 dimensi
-    'TES Prediction': y_pred_tes.ravel(),  # Ubah ke 1 dimensi
-    'ARIMA Prediction': y_pred_arima.ravel(),  # Ubah ke 1 dimensi
-    'TES Difference': (y_test - y_pred_tes).ravel(),  # Selisih dalam 1 dimensi
-    'ARIMA Difference': (y_test - y_pred_arima).ravel()  # Selisih dalam 1 dimensi
+        'Date': data.index[train_size:].date,
+        'Actual Price': y_test,
+        'TES Prediction': y_pred_tes,
+        'ARIMA Prediction': y_pred_arima,
+        'TES Difference': y_test - y_pred_tes,
+        'ARIMA Difference': y_test - y_pred_arima,
     }
-
     table_df = pd.DataFrame(table_data)
-
 
     # Menampilkan tabel
     st.subheader(f"{price_type} Price Table")
