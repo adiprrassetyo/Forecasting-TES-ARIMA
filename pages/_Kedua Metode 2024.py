@@ -175,14 +175,16 @@ def visualize_predictions(data, train_size, y_test, y_pred_tes, y_pred_arima, pr
 
     # Membuat DataFrame untuk tabel
     table_data = {
-        'Date': data.index[train_size:].date,
-        'Actual Price': y_test,
-        'TES Prediction': y_pred_tes,
-        'ARIMA Prediction': y_pred_arima,
-        'TES Difference': y_test - y_pred_tes,
-        'ARIMA Difference': y_test - y_pred_arima,
+    'Date': data.index[train_size:].date,  # Pastikan data index sudah sesuai
+    'Actual Price': y_test.ravel(),  # Ubah ke 1 dimensi
+    'TES Prediction': y_pred_tes.ravel(),  # Ubah ke 1 dimensi
+    'ARIMA Prediction': y_pred_arima.ravel(),  # Ubah ke 1 dimensi
+    'TES Difference': (y_test - y_pred_tes).ravel(),  # Selisih dalam 1 dimensi
+    'ARIMA Difference': (y_test - y_pred_arima).ravel()  # Selisih dalam 1 dimensi
     }
+
     table_df = pd.DataFrame(table_data)
+
 
     # Menampilkan tabel
     st.subheader(f"{price_type} Price Table")
